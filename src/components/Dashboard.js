@@ -1,9 +1,98 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
 const Dashboard = ({ authToken, API_BASE_URL }) => {
   const [keywordInput, setKeywordInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('keyword');
+  const [overview, setOverview] = useState(null);
+  const [keywords, setKeywords] = useState([]);
+  const [isLoadingDashboard, setIsLoadingDashboard] = useState(false);
+  const [researchResult, setResearchResult] = useState(null);
+  const [isResearchLoading, setIsResearchLoading] = useState(false);
+  const [keywordFilters, setKeywordFilters] = useState({
+    difficulty: 'all',
+    minRelevance: 0,
+    minVolume: 0
+  });
+
+  useEffect(() => {
+    if (!authToken) return;
+
+    const loadDashboardData = async () => {
+      try {
+        setIsLoadingDashboard(true);
+
+        const [overviewRes, keywordsRes] = await Promise.all([
+          fetch(`${API_BASE_URL}/api/dashboard/overview`, {
+            headers: { Authorization: `Bearer ${authToken}` }
+          }),
+          fetch(`${API_BASE_URL}/api/dashboard/keywords`, {
+            headers: { Authorization: `Bearer ${authToken}` }
+          })
+        ]);
+
+        const overviewData = await overviewRes.json();
+        const keywordsData = await keywordsRes.json();
+
+        if (overviewRes.ok) {
+          setOverview(overviewData);
+        }
+        if (keywordsRes.ok && Array.isArray(keywordsData.keywords)) {
+          setKeywords(keywordsData.keywords);
+        }
+      } catch (err) {
+        console.error('Failed to load dashboard data', err);
+      } finally {
+        setIsLoadingDashboard(false);
+      }
+    };
+
+    loadDashboardData();
+  }, [authToken, API_BASE_URL]);
+
+  const runKeywordResearch = async (baseKeyword) => {
+    if (!authToken) return;
+
+    // Optional competitor URLs - leave empty to use saved audit data (more diverse)
+    // You can provide specific competitor URLs if needed, or leave empty for automatic selection
+    const competitorUrls = []; // Empty array = use saved audits (more diverse results)
+
+    try {
+      setIsResearchLoading(true);
+      const res = await fetch(`${API_BASE_URL}/api/keywords/research`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`
+        },
+        body: JSON.stringify({ baseKeyword, competitorUrls })
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        const errorMsg = data.message || 'Failed to run keyword research';
+        console.error('Keyword research error:', errorMsg);
+        alert(errorMsg);
+        setResearchResult(null);
+        return;
+      }
+
+      // Ensure we have valid data structure
+      if (data && (data.suggestions || data.competitors)) {
+        setResearchResult(data);
+      } else {
+        console.error('Invalid keyword research response:', data);
+        alert('Received invalid data from keyword research API');
+        setResearchResult(null);
+      }
+    } catch (err) {
+      console.error('Keyword research failed', err);
+      alert('Failed to connect to keyword research API. Please check your connection.');
+      setResearchResult(null);
+    } finally {
+      setIsResearchLoading(false);
+    }
+  };
 
   const runAnalysis = async () => {
     if (!keywordInput.trim()) {
@@ -36,8 +125,14 @@ const Dashboard = ({ authToken, API_BASE_URL }) => {
         return;
       }
 
-      alert('Analysis input saved to database! (Demo analysis data still static on dashboard.)');
+      alert('Analysis input saved to database!');
+      const inputValue = keywordInput.trim();
       setKeywordInput('');
+
+      // Trigger keyword research based on the same input
+      if (inputValue) {
+        await runKeywordResearch(inputValue);
+      }
     } catch (err) {
       console.error(err);
       setIsLoading(false);
@@ -75,7 +170,7 @@ const Dashboard = ({ authToken, API_BASE_URL }) => {
       </div>
 
       {/* Dashboard Overview Cards */}
-      <div className="overview-cards" style={{ opacity: isLoading ? 0.5 : 1 }}>
+      <div className="overview-cards" style={{ opacity: isLoading || isLoadingDashboard ? 0.5 : 1 }}>
         <div className="card">
           <div className="card-header">
             <span className="card-title">Keyword Clusters</span>
@@ -83,7 +178,9 @@ const Dashboard = ({ authToken, API_BASE_URL }) => {
               <i className="fas fa-layer-group"></i>
             </div>
           </div>
-          <div className="card-value">24</div>
+          <div className="card-value">
+            {overview ? overview.keywordClusters : 24}
+          </div>
           <div className="card-change positive">
             <i className="fas fa-arrow-up"></i>
             12% increase
@@ -97,7 +194,9 @@ const Dashboard = ({ authToken, API_BASE_URL }) => {
               <i className="fas fa-exclamation-triangle"></i>
             </div>
           </div>
-          <div className="card-value">8</div>
+          <div className="card-value">
+            {overview ? overview.contentGaps : 8}
+          </div>
           <div className="card-change negative">
             <i className="fas fa-arrow-down"></i>
             Needs attention
@@ -111,7 +210,9 @@ const Dashboard = ({ authToken, API_BASE_URL }) => {
               <i className="fas fa-search"></i>
             </div>
           </div>
-          <div className="card-value">156</div>
+          <div className="card-value">
+            {overview ? overview.serpInsights : 156}
+          </div>
           <div className="card-change positive">
             <i className="fas fa-arrow-up"></i>
             8% increase
@@ -125,7 +226,9 @@ const Dashboard = ({ authToken, API_BASE_URL }) => {
               <i className="fas fa-trophy"></i>
             </div>
           </div>
-          <div className="card-value">78/100</div>
+          <div className="card-value">
+            {overview ? `${overview.seoScore}/100` : '78/100'}
+          </div>
           <div className="card-change positive">
             <i className="fas fa-arrow-up"></i>
             Good progress
@@ -154,6 +257,12 @@ const Dashboard = ({ authToken, API_BASE_URL }) => {
           >
             <i className="fas fa-lightbulb"></i> AI Suggestions
           </div>
+          <div
+            className={`tab ${activeTab === 'keyword-research' ? 'active' : ''}`}
+            onClick={() => setActiveTab('keyword-research')}
+          >
+            <i className="fas fa-search-plus"></i> Keyword Research
+          </div>
         </div>
 
         {/* Keyword Analysis Tab */}
@@ -178,41 +287,67 @@ const Dashboard = ({ authToken, API_BASE_URL }) => {
                 </tr>
               </thead>
               <tbody>
-                <tr>
-                  <td>digital marketing strategy</td>
-                  <td>12,400</td>
-                  <td>Medium</td>
-                  <td><span className="performance-badge badge-strong">Strong</span></td>
-                  <td>High</td>
-                </tr>
-                <tr>
-                  <td>SEO optimization tips</td>
-                  <td>8,900</td>
-                  <td>Low</td>
-                  <td><span className="performance-badge badge-strong">Strong</span></td>
-                  <td>Medium</td>
-                </tr>
-                <tr>
-                  <td>content marketing tools</td>
-                  <td>6,700</td>
-                  <td>High</td>
-                  <td><span className="performance-badge badge-medium">Medium</span></td>
-                  <td>High</td>
-                </tr>
-                <tr>
-                  <td>social media analytics</td>
-                  <td>5,200</td>
-                  <td>Medium</td>
-                  <td><span className="performance-badge badge-weak">Weak</span></td>
-                  <td>Very High</td>
-                </tr>
-                <tr>
-                  <td>email marketing campaign</td>
-                  <td>4,800</td>
-                  <td>Low</td>
-                  <td><span className="performance-badge badge-medium">Medium</span></td>
-                  <td>Medium</td>
-                </tr>
+                {keywords.length > 0 ? (
+                  keywords.map((row) => (
+                    <tr key={row.id}>
+                      <td>{row.keyword}</td>
+                      <td>{row.searchVolume.toLocaleString()}</td>
+                      <td>{row.difficulty}</td>
+                      <td>
+                        <span
+                          className={`performance-badge ${
+                            row.performance === 'Strong'
+                              ? 'badge-strong'
+                              : row.performance === 'Medium'
+                              ? 'badge-medium'
+                              : 'badge-weak'
+                          }`}
+                        >
+                          {row.performance}
+                        </span>
+                      </td>
+                      <td>{row.opportunity}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <>
+                    <tr>
+                      <td>digital marketing strategy</td>
+                      <td>12,400</td>
+                      <td>Medium</td>
+                      <td><span className="performance-badge badge-strong">Strong</span></td>
+                      <td>High</td>
+                    </tr>
+                    <tr>
+                      <td>SEO optimization tips</td>
+                      <td>8,900</td>
+                      <td>Low</td>
+                      <td><span className="performance-badge badge-strong">Strong</span></td>
+                      <td>Medium</td>
+                    </tr>
+                    <tr>
+                      <td>content marketing tools</td>
+                      <td>6,700</td>
+                      <td>High</td>
+                      <td><span className="performance-badge badge-medium">Medium</span></td>
+                      <td>High</td>
+                    </tr>
+                    <tr>
+                      <td>social media analytics</td>
+                      <td>5,200</td>
+                      <td>Medium</td>
+                      <td><span className="performance-badge badge-weak">Weak</span></td>
+                      <td>Very High</td>
+                    </tr>
+                    <tr>
+                      <td>email marketing campaign</td>
+                      <td>4,800</td>
+                      <td>Low</td>
+                      <td><span className="performance-badge badge-medium">Medium</span></td>
+                      <td>Medium</td>
+                    </tr>
+                  </>
+                )}
               </tbody>
             </table>
 
@@ -293,6 +428,148 @@ const Dashboard = ({ authToken, API_BASE_URL }) => {
                 <p style={{ color: '#666' }}>Found 23 low-competition long-tail opportunities with combined potential of 5,000 monthly visits</p>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Keyword Research Tab */}
+        {activeTab === 'keyword-research' && (
+          <div className="tab-content active">
+            <h3>Keyword Research & Competitive Analysis</h3>
+            {isResearchLoading && (
+              <p style={{ marginTop: '1rem', color: '#666' }}>
+                <i className="fas fa-spinner fa-spin"></i> Analyzing competitors...
+              </p>
+            )}
+            {!isResearchLoading && researchResult && (
+              <>
+                <div style={{ marginTop: '1.5rem', marginBottom: '1rem' }}>
+                  <h4 style={{ marginBottom: '0.5rem' }}>Filters</h4>
+                  <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '0.25rem' }}>Difficulty</label>
+                      <select
+                        value={keywordFilters.difficulty}
+                        onChange={(e) =>
+                          setKeywordFilters({ ...keywordFilters, difficulty: e.target.value })
+                        }
+                      >
+                        <option value="all">All</option>
+                        <option value="Easy">Easy</option>
+                        <option value="Medium">Medium</option>
+                        <option value="Hard">Hard</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '0.25rem' }}>
+                        Min Relevance
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={keywordFilters.minRelevance}
+                        onChange={(e) =>
+                          setKeywordFilters({
+                            ...keywordFilters,
+                            minRelevance: Number(e.target.value) || 0
+                          })
+                        }
+                        style={{ width: '80px' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '0.25rem' }}>
+                        Min Volume
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={keywordFilters.minVolume}
+                        onChange={(e) =>
+                          setKeywordFilters({
+                            ...keywordFilters,
+                            minVolume: Number(e.target.value) || 0
+                          })
+                        }
+                        style={{ width: '100px' }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <h4>Suggested Long-tail Keywords</h4>
+                {researchResult.suggestions && researchResult.suggestions.length > 0 ? (
+                  <table className="keyword-table">
+                    <thead>
+                      <tr>
+                        <th>Keyword</th>
+                        <th>Relevance</th>
+                        <th>Est. Volume</th>
+                        <th>Difficulty</th>
+                        <th>Competitors</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {researchResult.suggestions
+                        .filter((s) => {
+                          if (keywordFilters.difficulty !== 'all' && s.estimatedDifficulty !== keywordFilters.difficulty) {
+                            return false;
+                          }
+                          if (s.relevanceScore < keywordFilters.minRelevance) return false;
+                          if (s.estimatedSearchVolume < keywordFilters.minVolume) return false;
+                          return true;
+                        })
+                        .map((s) => (
+                          <tr key={s.keyword}>
+                            <td>{s.keyword}</td>
+                            <td>{s.relevanceScore}</td>
+                            <td>{s.estimatedSearchVolume}</td>
+                            <td>{s.estimatedDifficulty}</td>
+                            <td>{s.competitorCount}</td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p style={{ color: '#666', marginTop: '1rem' }}>No keyword suggestions generated yet.</p>
+                )}
+
+                {researchResult.competitors && researchResult.competitors.length > 0 && (
+                  <>
+                    <h4 style={{ marginTop: '2rem' }}>Competitor Overview</h4>
+                    <table className="keyword-table">
+                      <thead>
+                        <tr>
+                          <th>URL</th>
+                          <th>Title</th>
+                          <th>Word Count</th>
+                          <th>Keyword Density %</th>
+                          <th>Score / Grade</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {researchResult.competitors.map((c) => (
+                          <tr key={c.url}>
+                            <td>{c.url}</td>
+                            <td>{c.title}</td>
+                            <td>{c.wordCount}</td>
+                            <td>{c.keywordDensity}</td>
+                            <td>
+                              {c.score} ({c.grade})
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </>
+                )}
+              </>
+            )}
+            {!isResearchLoading && !researchResult && (
+              <p style={{ marginTop: '1rem', color: '#666' }}>
+                Run an analysis from the top of the dashboard to generate keyword suggestions and competitor data.
+              </p>
+            )}
           </div>
         )}
       </div>

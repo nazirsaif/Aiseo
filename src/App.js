@@ -17,9 +17,40 @@ function App() {
   const [selectedPlan, setSelectedPlan] = useState('');
 
   useEffect(() => {
-    // Always show landing page first - user must login/signup
-    // Token validation will be handled on the backend when making API calls
-    setShowLanding(true);
+    // On initial load, try to restore existing session from localStorage
+    try {
+      const storedToken = localStorage.getItem('seo_tool_token');
+      if (storedToken) {
+        setAuthToken(storedToken);
+        // Fetch current user profile with this token
+        fetch(`${API_BASE_URL}/api/user/me`, {
+          headers: {
+            Authorization: `Bearer ${storedToken}`
+          }
+        })
+          .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
+          .then(({ ok, data }) => {
+            if (ok && data.user) {
+              setCurrentUser(data.user);
+              setShowLanding(false);
+            } else {
+              // Invalid token; clear it
+              localStorage.removeItem('seo_tool_token');
+              setAuthToken(null);
+              setCurrentUser(null);
+              setShowLanding(true);
+            }
+          })
+          .catch(() => {
+            setShowLanding(true);
+          });
+      } else {
+        setShowLanding(true);
+      }
+    } catch (e) {
+      console.warn('Could not read token from localStorage', e);
+      setShowLanding(true);
+    }
   }, []);
 
   const handleLogin = (token, user) => {
@@ -57,6 +88,10 @@ function App() {
         console.warn('Could not clear token', e);
       }
     }
+  };
+
+  const handleUserUpdate = (updatedUser) => {
+    setCurrentUser(updatedUser);
   };
 
   const openLoginModal = () => {
@@ -117,6 +152,7 @@ function App() {
           currentUser={currentUser}
           onLogout={handleLogout}
           API_BASE_URL={API_BASE_URL}
+          onUserUpdate={handleUserUpdate}
         />
       )}
 

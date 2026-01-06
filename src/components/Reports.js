@@ -1,6 +1,87 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 
-const Reports = () => {
+const Reports = ({ authToken, API_BASE_URL }) => {
+  const [reports, setReports] = useState([]);
+
+  useEffect(() => {
+    if (!authToken) return;
+
+    const loadReports = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/reports`, {
+          headers: {
+            Authorization: `Bearer ${authToken}`
+          }
+        });
+        const data = await res.json();
+        if (res.ok && Array.isArray(data.reports) && data.reports.length > 0) {
+          setReports(data.reports);
+        } else {
+          // Fallback to demo reports if no real data yet
+          setReports([
+            {
+              id: 1,
+              icon: 'fa-file-pdf',
+              date: 'Oct 28, 2025',
+              title: 'Monthly SEO Performance Report',
+              type: 'Comprehensive',
+              pages: 24,
+              description: 'Complete analysis of keyword rankings, traffic trends, and competitor insights for October 2025.'
+            },
+            {
+              id: 2,
+              icon: 'fa-chart-bar',
+              date: 'Oct 21, 2025',
+              title: 'Keyword Gap Analysis',
+              type: 'Detailed',
+              pages: 18,
+              description: 'Identified 45 keyword opportunities and content gaps compared to top 3 competitors.'
+            },
+            {
+              id: 3,
+              icon: 'fa-search',
+              date: 'Oct 14, 2025',
+              title: 'SERP Feature Analysis',
+              type: 'Quick',
+              pages: 12,
+              description: 'Analysis of featured snippets, people also ask, and other SERP features for your keywords.'
+            },
+            {
+              id: 4,
+              icon: 'fa-users',
+              date: 'Oct 7, 2025',
+              title: 'Competitor Benchmarking',
+              type: 'Strategic',
+              pages: 30,
+              description: 'In-depth comparison with 5 main competitors including backlink analysis and content strategy.'
+            },
+            {
+              id: 5,
+              icon: 'fa-lightbulb',
+              date: 'Sep 30, 2025',
+              title: 'Content Optimization Recommendations',
+              type: 'Actionable',
+              pages: 15,
+              description: 'AI-powered suggestions for improving 20 underperforming pages with specific action items.'
+            },
+            {
+              id: 6,
+              icon: 'fa-mobile-alt',
+              date: 'Sep 23, 2025',
+              title: 'Technical SEO Audit',
+              type: 'Technical',
+              pages: 28,
+              description: 'Complete technical audit covering site speed, mobile-friendliness, crawlability, and indexing issues.'
+            }
+          ]);
+        }
+      } catch (err) {
+        console.error('Failed to load reports', err);
+      }
+    };
+
+    loadReports();
+  }, [authToken, API_BASE_URL]);
   const generateNewReport = () => {
     alert('Starting new report generation... This may take a few minutes.');
   };
@@ -12,63 +93,6 @@ const Reports = () => {
   const downloadReportFile = (id) => {
     alert('Downloading report #' + id + '...');
   };
-
-  const reports = [
-    {
-      id: 1,
-      icon: 'fa-file-pdf',
-      date: 'Oct 28, 2025',
-      title: 'Monthly SEO Performance Report',
-      type: 'Comprehensive',
-      pages: 24,
-      description: 'Complete analysis of keyword rankings, traffic trends, and competitor insights for October 2025.'
-    },
-    {
-      id: 2,
-      icon: 'fa-chart-bar',
-      date: 'Oct 21, 2025',
-      title: 'Keyword Gap Analysis',
-      type: 'Detailed',
-      pages: 18,
-      description: 'Identified 45 keyword opportunities and content gaps compared to top 3 competitors.'
-    },
-    {
-      id: 3,
-      icon: 'fa-search',
-      date: 'Oct 14, 2025',
-      title: 'SERP Feature Analysis',
-      type: 'Quick',
-      pages: 12,
-      description: 'Analysis of featured snippets, people also ask, and other SERP features for your keywords.'
-    },
-    {
-      id: 4,
-      icon: 'fa-users',
-      date: 'Oct 7, 2025',
-      title: 'Competitor Benchmarking',
-      type: 'Strategic',
-      pages: 30,
-      description: 'In-depth comparison with 5 main competitors including backlink analysis and content strategy.'
-    },
-    {
-      id: 5,
-      icon: 'fa-lightbulb',
-      date: 'Sep 30, 2025',
-      title: 'Content Optimization Recommendations',
-      type: 'Actionable',
-      pages: 15,
-      description: 'AI-powered suggestions for improving 20 underperforming pages with specific action items.'
-    },
-    {
-      id: 6,
-      icon: 'fa-mobile-alt',
-      date: 'Sep 23, 2025',
-      title: 'Technical SEO Audit',
-      type: 'Technical',
-      pages: 28,
-      description: 'Complete technical audit covering site speed, mobile-friendliness, crawlability, and indexing issues.'
-    }
-  ];
 
   return (
     <div className="page-section active">

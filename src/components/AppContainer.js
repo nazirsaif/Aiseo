@@ -6,7 +6,7 @@ import Settings from './Settings';
 import SEOAudit from './SEOAudit';
 import NotificationPanel from './NotificationPanel';
 
-const AppContainer = ({ authToken, currentUser, onLogout, API_BASE_URL }) => {
+const AppContainer = ({ authToken, currentUser, onLogout, API_BASE_URL, onUserUpdate }) => {
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [showNotifications, setShowNotifications] = useState(false);
 
@@ -27,8 +27,17 @@ const AppContainer = ({ authToken, currentUser, onLogout, API_BASE_URL }) => {
         {currentPage === 'seo-audit' && (
           <SEOAudit authToken={authToken} API_BASE_URL={API_BASE_URL} />
         )}
-        {currentPage === 'reports' && <Reports />}
-        {currentPage === 'settings' && <Settings />}
+        {currentPage === 'reports' && (
+          <Reports authToken={authToken} API_BASE_URL={API_BASE_URL} />
+        )}
+        {currentPage === 'settings' && (
+          <Settings
+            authToken={authToken}
+            API_BASE_URL={API_BASE_URL}
+            currentUser={currentUser}
+            onUserUpdate={onUserUpdate}
+          />
+        )}
       </div>
 
       <NotificationPanel

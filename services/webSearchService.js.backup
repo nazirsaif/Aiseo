@@ -1,0 +1,153 @@
+const axios = require('axios');
+const { JSDOM } = require('jsdom');
+
+/**
+ * Search the web for competitors ranking for a keyword
+ * Uses DuckDuckGo HTML search (no API key needed)
+ */
+async function searchWebForCompetitors(keyword, maxResults = 10) {
+  try {
+    console.log(`\n=== Web Search for Keyword: "${keyword}" ===`);
+    
+    // Use DuckDuckGo search (no API key required, more reliable)
+    const searchQuery = encodeURIComponent(keyword);
+    const searchUrl = `https://html.duckduckgo.com/html/?q=${searchQuery}`;
+    
+    console.log(`Searching: ${searchUrl}`);
+    
+    const headers = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Connection': 'keep-alive'
+    };
+
+    const response = await axios.get(searchUrl, {
+      headers,
+      timeout: 15000,
+      maxRedirects: 5
+    });
+
+    const html = response.data;
+    const dom = new JSDOM(html);
+    const document = dom.window.document;
+
+    // Extract search results from DuckDuckGo HTML
+    const results = [];
+    const resultLinks = document.querySelectorAll('.result__a, .web-result__link');
+    
+    console.log(`Found ${resultLinks.length} search result links`);
+
+    for (let i = 0; i < Math.min(resultLinks.length, maxResults); i++) {
+      const link = resultLinks[i];
+      const url = link.getAttribute('href');
+      const title = link.textContent.trim();
+      
+      if (url && url.startsWith('http')) {
+        // Clean up DuckDuckGo redirect URLs
+        let cleanUrl = url;
+        if (url.includes('duckduckgo.com/l/?uddg=')) {
+          try {
+            const urlParams = new URL(url);
+            const uddg = urlParams.searchParams.get('uddg');
+            if (uddg) {
+              cleanUrl = decodeURIComponent(uddg);
+            }
+          } catch (e) {
+            // Keep original URL if parsing fails
+          }
+        }
+        
+        results.push({
+          url: cleanUrl,
+          title: title || cleanUrl,
+          rank: i + 1
+        });
+      }
+    }
+
+    console.log(`✅ Extracted ${results.length} competitor URLs from web search`);
+    return results;
+  } catch (error) {
+    console.error('Web search error:', error.message);
+    
+    // Fallback: Try Google search (may be blocked, but worth trying)
+    try {
+      console.log('Trying Google search as fallback...');
+      return await searchGoogleFallback(keyword, maxResults);
+    } catch (fallbackError) {
+      console.error('Fallback search also failed:', fallbackError.message);
+      // Return empty array - will use saved audits as last resort
+      return [];
+    }
+  }
+}
+
+/**
+ * Fallback Google search (may be blocked by anti-bot measures)
+ */
+async function searchGoogleFallback(keyword, maxResults = 10) {
+  const searchQuery = encodeURIComponent(keyword);
+  const searchUrl = `https://www.google.com/search?q=${searchQuery}&num=${maxResults}`;
+  
+  const headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9'
+  };
+
+  const response = await axios.get(searchUrl, {
+    headers,
+    timeout: 10000
+  });
+
+  const html = response.data;
+  const dom = new JSDOM(html);
+  const document = dom.window.document;
+
+  const results = [];
+  const resultLinks = document.querySelectorAll('a[href^="/url?q="]');
+  
+  for (let i = 0; i < Math.min(resultLinks.length, maxResults); i++) {
+    const link = resultLinks[i];
+    const href = link.getAttribute('href');
+    const title = link.textContent.trim();
+    
+    if (href) {
+      try {
+        const urlMatch = href.match(/\/url\?q=([^&]+)/);
+        if (urlMatch) {
+          const url = decodeURIComponent(urlMatch[1]);
+          if (url.startsWith('http')) {
+            results.push({
+              url: url,
+              title: title || url,
+              rank: i + 1
+            });
+          }
+        }
+      } catch (e) {
+        // Skip invalid URLs
+      }
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Alternative: Use SerpAPI or similar service (requires API key)
+ * This is a placeholder - you can integrate paid services here
+ */
+async function searchWithAPI(keyword, apiKey, maxResults = 10) {
+  // Placeholder for SerpAPI, DataForSEO, etc.
+  // Example: const response = await axios.get(`https://serpapi.com/search.json?q=${keyword}&api_key=${apiKey}`);
+  return [];
+}
+
+module.exports = {
+  searchWebForCompetitors,
+  searchGoogleFallback
+};
+

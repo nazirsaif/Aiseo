@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
-const Settings = () => {
+const Settings = ({ authToken, API_BASE_URL, currentUser, onUserUpdate }) => {
   const [activeSection, setActiveSection] = useState('profile');
   const [toggleStates, setToggleStates] = useState({
     twoFA: false,
@@ -15,11 +15,233 @@ const Settings = () => {
     soundAlerts: false
   });
 
+  const [profile, setProfile] = useState({
+    fullName: '',
+    email: '',
+    company: '',
+    websiteUrl: '',
+    bio: ''
+  });
+
+  const [preferences, setPreferences] = useState({
+    language: 'English (US)',
+    timezone: 'Pakistan Standard Time (PKT)',
+    defaultReportFormat: 'PDF'
+  });
+
+  const [passwordFields, setPasswordFields] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmNewPassword: ''
+  });
+
+  const applyUserToState = (user) => {
+    if (!user) return;
+    setProfile({
+      fullName: user.name || '',
+      email: user.email || '',
+      company: user.company || '',
+      websiteUrl: user.websiteUrl || '',
+      bio: user.bio || ''
+    });
+    if (user.settings) {
+      setToggleStates((prev) => ({
+        ...prev,
+        ...(user.settings.toggles || {})
+      }));
+      setPreferences((prev) => ({
+        ...prev,
+        ...(user.settings.preferences || {})
+      }));
+    }
+  };
+
+  useEffect(() => {
+    // Initialize from currentUser (from login) first for instant fill
+    if (currentUser) {
+      applyUserToState(currentUser);
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    // Load latest profile/settings from backend once per auth session
+    const loadProfile = async () => {
+      if (!authToken) return;
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/user/me`, {
+          headers: {
+            Authorization: `Bearer ${authToken}`
+          }
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          console.error(data.message || 'Failed to load user profile');
+          return;
+        }
+        if (data.user) {
+          applyUserToState(data.user);
+          if (onUserUpdate) {
+            onUserUpdate(data.user);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load profile', err);
+      }
+    };
+
+    loadProfile();
+  }, [authToken, API_BASE_URL]);
+
   const toggleSwitch = (key) => {
     setToggleStates({
       ...toggleStates,
       [key]: !toggleStates[key]
     });
+  };
+
+  const handleProfileChange = (field, value) => {
+    setProfile({
+      ...profile,
+      [field]: value
+    });
+  };
+
+  const handlePreferencesChange = (field, value) => {
+    setPreferences({
+      ...preferences,
+      [field]: value
+    });
+  };
+
+  const handlePasswordFieldChange = (field, value) => {
+    setPasswordFields({
+      ...passwordFields,
+      [field]: value
+    });
+  };
+
+  const saveProfile = async () => {
+    if (!authToken) {
+      alert('Please log in to update your profile.');
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/user/me`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`
+        },
+        body: JSON.stringify({
+          name: profile.fullName,
+          email: profile.email,
+          company: profile.company,
+          websiteUrl: profile.websiteUrl,
+          bio: profile.bio
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.message || 'Failed to update profile');
+        return;
+      }
+      if (data.user) {
+        applyUserToState(data.user);
+        if (onUserUpdate) {
+          onUserUpdate(data.user);
+        }
+      }
+      alert('Profile updated successfully!');
+    } catch (err) {
+      console.error('Failed to save profile', err);
+      alert('Unable to connect to server. Is the backend running?');
+    }
+  };
+
+  const saveSettings = async () => {
+    if (!authToken) {
+      alert('Please log in to update your settings.');
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/user/me`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`
+        },
+        body: JSON.stringify({
+          settings: {
+            toggles: toggleStates,
+            preferences
+          }
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.message || 'Failed to update settings');
+        return;
+      }
+      if (data.user) {
+        applyUserToState(data.user);
+        if (onUserUpdate) {
+          onUserUpdate(data.user);
+        }
+      }
+      alert('Settings updated successfully!');
+    } catch (err) {
+      console.error('Failed to save settings', err);
+      alert('Unable to connect to server. Is the backend running?');
+    }
+  };
+
+  const updatePassword = async () => {
+    const { currentPassword, newPassword, confirmNewPassword } = passwordFields;
+
+    if (!currentPassword || !newPassword || !confirmNewPassword) {
+      alert('Please fill in all password fields.');
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      alert('New password and confirmation do not match.');
+      return;
+    }
+    if (newPassword.length < 8) {
+      alert('New password must be at least 8 characters long.');
+      return;
+    }
+    if (!authToken) {
+      alert('Please log in to update your password.');
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/user/change-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`
+        },
+        body: JSON.stringify({
+          currentPassword,
+          newPassword
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.message || 'Failed to update password');
+        return;
+      }
+      alert('Password updated successfully!');
+      setPasswordFields({
+        currentPassword: '',
+        newPassword: '',
+        confirmNewPassword: ''
+      });
+    } catch (err) {
+      console.error('Failed to update password', err);
+      alert('Unable to connect to server. Is the backend running?');
+    }
   };
 
   const copyApiKey = () => {
@@ -92,30 +314,55 @@ const Settings = () => {
                 
                 <div className="form-group">
                   <label>Full Name</label>
-                  <input type="text" defaultValue="saifullah nazir" placeholder="Enter your full name" />
+                  <input
+                    type="text"
+                    value={profile.fullName}
+                    onChange={(e) => handleProfileChange('fullName', e.target.value)}
+                    placeholder="Enter your full name"
+                  />
                 </div>
 
                 <div className="form-group">
                   <label>Email Address</label>
-                  <input type="email" defaultValue="saifullahnazir@gmail.com" placeholder="Enter your email" />
+                  <input
+                    type="email"
+                    value={profile.email}
+                    onChange={(e) => handleProfileChange('email', e.target.value)}
+                    placeholder="Enter your email"
+                  />
                 </div>
 
                 <div className="form-group">
                   <label>Company Name</label>
-                  <input type="text" defaultValue="Digital Marketing Pro" placeholder="Enter company name" />
+                  <input
+                    type="text"
+                    value={profile.company}
+                    onChange={(e) => handleProfileChange('company', e.target.value)}
+                    placeholder="Enter company name"
+                  />
                 </div>
 
                 <div className="form-group">
                   <label>Website URL</label>
-                  <input type="url" defaultValue="https://example.com" placeholder="Enter your website URL" />
+                  <input
+                    type="url"
+                    value={profile.websiteUrl}
+                    onChange={(e) => handleProfileChange('websiteUrl', e.target.value)}
+                    placeholder="Enter your website URL"
+                  />
                 </div>
 
                 <div className="form-group">
                   <label>Bio</label>
-                  <textarea rows="4" placeholder="Tell us about yourself and your business..." defaultValue="SEO specialist with 5+ years of experience helping businesses grow their organic traffic."></textarea>
+                  <textarea
+                    rows="4"
+                    placeholder="Tell us about yourself and your business..."
+                    value={profile.bio}
+                    onChange={(e) => handleProfileChange('bio', e.target.value)}
+                  ></textarea>
                 </div>
 
-                <button className="btn btn-primary">
+                <button className="btn btn-primary" onClick={saveProfile}>
                   <i className="fas fa-save"></i> Save Changes
                 </button>
               </div>
@@ -128,20 +375,35 @@ const Settings = () => {
                 
                 <div className="form-group">
                   <label>Current Password</label>
-                  <input type="password" placeholder="Enter current password" />
+                  <input
+                    type="password"
+                    placeholder="Enter current password"
+                    value={passwordFields.currentPassword}
+                    onChange={(e) => handlePasswordFieldChange('currentPassword', e.target.value)}
+                  />
                 </div>
 
                 <div className="form-group">
                   <label>New Password</label>
-                  <input type="password" placeholder="Enter new password" />
+                  <input
+                    type="password"
+                    placeholder="Enter new password"
+                    value={passwordFields.newPassword}
+                    onChange={(e) => handlePasswordFieldChange('newPassword', e.target.value)}
+                  />
                 </div>
 
                 <div className="form-group">
                   <label>Confirm New Password</label>
-                  <input type="password" placeholder="Confirm new password" />
+                  <input
+                    type="password"
+                    placeholder="Confirm new password"
+                    value={passwordFields.confirmNewPassword}
+                    onChange={(e) => handlePasswordFieldChange('confirmNewPassword', e.target.value)}
+                  />
                 </div>
 
-                <button className="btn btn-primary">
+                <button className="btn btn-primary" onClick={updatePassword}>
                   <i className="fas fa-lock"></i> Update Password
                 </button>
 
@@ -195,32 +457,41 @@ const Settings = () => {
                 
                 <div className="form-group">
                   <label>Language</label>
-                  <select>
-                    <option>English (US)</option>
-                    <option>English (UK)</option>
-                    <option>Spanish</option>
-                    <option>French</option>
-                    <option>German</option>
+                  <select
+                    value={preferences.language}
+                    onChange={(e) => handlePreferencesChange('language', e.target.value)}
+                  >
+                    <option value="English (US)">English (US)</option>
+                    <option value="English (UK)">English (UK)</option>
+                    <option value="Spanish">Spanish</option>
+                    <option value="French">French</option>
+                    <option value="German">German</option>
                   </select>
                 </div>
 
                 <div className="form-group">
                   <label>Timezone</label>
-                  <select>
-                    <option>Pakistan Standard Time (PKT)</option>
-                    <option>Eastern Time (ET)</option>
-                    <option>Pacific Time (PT)</option>
-                    <option>Central European Time (CET)</option>
+                  <select
+                    value={preferences.timezone}
+                    onChange={(e) => handlePreferencesChange('timezone', e.target.value)}
+                  >
+                    <option value="Pakistan Standard Time (PKT)">Pakistan Standard Time (PKT)</option>
+                    <option value="Eastern Time (ET)">Eastern Time (ET)</option>
+                    <option value="Pacific Time (PT)">Pacific Time (PT)</option>
+                    <option value="Central European Time (CET)">Central European Time (CET)</option>
                   </select>
                 </div>
 
                 <div className="form-group">
                   <label>Default Report Format</label>
-                  <select>
-                    <option>PDF</option>
-                    <option>HTML</option>
-                    <option>Excel (XLSX)</option>
-                    <option>CSV</option>
+                  <select
+                    value={preferences.defaultReportFormat}
+                    onChange={(e) => handlePreferencesChange('defaultReportFormat', e.target.value)}
+                  >
+                    <option value="PDF">PDF</option>
+                    <option value="HTML">HTML</option>
+                    <option value="Excel (XLSX)">Excel (XLSX)</option>
+                    <option value="CSV">CSV</option>
                   </select>
                 </div>
 
@@ -261,7 +532,7 @@ const Settings = () => {
                   ></div>
                 </div>
 
-                <button className="btn btn-primary">
+                <button className="btn btn-primary" onClick={saveSettings}>
                   <i className="fas fa-save"></i> Save Preferences
                 </button>
               </div>
@@ -344,7 +615,7 @@ const Settings = () => {
                   ></div>
                 </div>
 
-                <button className="btn btn-primary">
+                <button className="btn btn-primary" onClick={saveSettings}>
                   <i className="fas fa-save"></i> Save Notification Settings
                 </button>
               </div>
