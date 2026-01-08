@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import notification from '../utils/notification';
 
 const LoginModal = ({ onClose, onSwitchToRegister, onLogin, API_BASE_URL }) => {
   const [email, setEmail] = useState('');
@@ -10,12 +11,12 @@ const LoginModal = ({ onClose, onSwitchToRegister, onLogin, API_BASE_URL }) => {
     // Email validation - proper format (example@gmail.com)
     const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
     if (!email || !emailRegex.test(email.trim())) {
-      alert('Please enter a valid email address (e.g., example@gmail.com)');
+      notification.error('Please enter a valid email address (e.g., example@gmail.com)');
       return;
     }
     
     if (!password) {
-      alert('Please enter your password');
+      notification.error('Please enter your password');
       return;
     }
 
@@ -28,20 +29,20 @@ const LoginModal = ({ onClose, onSwitchToRegister, onLogin, API_BASE_URL }) => {
 
       const data = await res.json();
       if (!res.ok) {
-        alert(data.message || 'Login failed');
+        notification.error(data.message || 'Login failed');
         return;
       }
 
-      alert('Login successful! Redirecting to dashboard...');
+      notification.success('Login successful! Redirecting to dashboard...');
       onLogin(data.token, data.user);
     } catch (err) {
       console.error(err);
-      alert('Unable to connect to server. Is the backend running?');
+      notification.error('Unable to connect to server. Is the backend running?');
     }
   };
 
   const socialLogin = (provider) => {
-    alert(`Redirecting to ${provider} login...`);
+    notification.info(`Redirecting to ${provider} login...`);
   };
 
   return (

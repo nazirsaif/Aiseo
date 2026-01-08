@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import notification from '../utils/notification';
 
 const Settings = ({ authToken, API_BASE_URL, currentUser, onUserUpdate }) => {
   const [activeSection, setActiveSection] = useState('profile');
@@ -122,7 +123,7 @@ const Settings = ({ authToken, API_BASE_URL, currentUser, onUserUpdate }) => {
 
   const saveProfile = async () => {
     if (!authToken) {
-      alert('Please log in to update your profile.');
+      notification.warning('Please log in to update your profile.');
       return;
     }
     try {
@@ -142,7 +143,7 @@ const Settings = ({ authToken, API_BASE_URL, currentUser, onUserUpdate }) => {
       });
       const data = await res.json();
       if (!res.ok) {
-        alert(data.message || 'Failed to update profile');
+        notification.error(data.message || 'Failed to update profile');
         return;
       }
       if (data.user) {
@@ -151,16 +152,16 @@ const Settings = ({ authToken, API_BASE_URL, currentUser, onUserUpdate }) => {
           onUserUpdate(data.user);
         }
       }
-      alert('Profile updated successfully!');
+      notification.success('Profile updated successfully!');
     } catch (err) {
       console.error('Failed to save profile', err);
-      alert('Unable to connect to server. Is the backend running?');
+      notification.error('Unable to connect to server. Is the backend running?');
     }
   };
 
   const saveSettings = async () => {
     if (!authToken) {
-      alert('Please log in to update your settings.');
+      notification.warning('Please log in to update your settings.');
       return;
     }
     try {
@@ -179,7 +180,7 @@ const Settings = ({ authToken, API_BASE_URL, currentUser, onUserUpdate }) => {
       });
       const data = await res.json();
       if (!res.ok) {
-        alert(data.message || 'Failed to update settings');
+        notification.error(data.message || 'Failed to update settings');
         return;
       }
       if (data.user) {
@@ -188,10 +189,10 @@ const Settings = ({ authToken, API_BASE_URL, currentUser, onUserUpdate }) => {
           onUserUpdate(data.user);
         }
       }
-      alert('Settings updated successfully!');
+      notification.success('Settings updated successfully!');
     } catch (err) {
       console.error('Failed to save settings', err);
-      alert('Unable to connect to server. Is the backend running?');
+      notification.error('Unable to connect to server. Is the backend running?');
     }
   };
 
@@ -199,19 +200,19 @@ const Settings = ({ authToken, API_BASE_URL, currentUser, onUserUpdate }) => {
     const { currentPassword, newPassword, confirmNewPassword } = passwordFields;
 
     if (!currentPassword || !newPassword || !confirmNewPassword) {
-      alert('Please fill in all password fields.');
+      notification.warning('Please fill in all password fields.');
       return;
     }
     if (newPassword !== confirmNewPassword) {
-      alert('New password and confirmation do not match.');
+      notification.error('New password and confirmation do not match.');
       return;
     }
     if (newPassword.length < 8) {
-      alert('New password must be at least 8 characters long.');
+      notification.error('New password must be at least 8 characters long.');
       return;
     }
     if (!authToken) {
-      alert('Please log in to update your password.');
+      notification.warning('Please log in to update your password.');
       return;
     }
 
@@ -229,10 +230,10 @@ const Settings = ({ authToken, API_BASE_URL, currentUser, onUserUpdate }) => {
       });
       const data = await res.json();
       if (!res.ok) {
-        alert(data.message || 'Failed to update password');
+        notification.error(data.message || 'Failed to update password');
         return;
       }
-      alert('Password updated successfully!');
+      notification.success('Password updated successfully!');
       setPasswordFields({
         currentPassword: '',
         newPassword: '',
@@ -240,23 +241,23 @@ const Settings = ({ authToken, API_BASE_URL, currentUser, onUserUpdate }) => {
       });
     } catch (err) {
       console.error('Failed to update password', err);
-      alert('Unable to connect to server. Is the backend running?');
+      notification.error('Unable to connect to server. Is the backend running?');
     }
   };
 
   const copyApiKey = () => {
-    alert('API Key copied to clipboard!');
+    notification.success('API Key copied to clipboard!');
   };
 
   const cancelSubscription = () => {
     if (window.confirm('Are you sure you want to cancel your subscription?')) {
-      alert('Subscription cancellation initiated. You will retain access until the end of your billing period.');
+      notification.info('Subscription cancellation initiated. You will retain access until the end of your billing period.');
     }
   };
 
   const openPricingModal = () => {
     // This would scroll to pricing section if landing page was visible
-    alert('Please visit the pricing section to upgrade your plan.');
+    notification.info('Please visit the pricing section to upgrade your plan.');
   };
 
   return (

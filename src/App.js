@@ -4,6 +4,7 @@ import AppContainer from './components/AppContainer';
 import LoginModal from './components/LoginModal';
 import RegisterModal from './components/RegisterModal';
 import PlanModal from './components/PlanModal';
+import notification from './utils/notification';
 
 const API_BASE_URL = 'http://localhost:5000';
 
@@ -123,7 +124,7 @@ function App() {
   const selectPlan = (plan) => {
     setSelectedPlan(plan);
     if (plan === 'enterprise') {
-      alert('Our sales team will contact you shortly to discuss your enterprise needs!');
+      notification.info('Our sales team will contact you shortly to discuss your enterprise needs!');
       return;
     }
     setShowRegisterModal(false);
@@ -131,7 +132,7 @@ function App() {
   };
 
   const handlePayment = () => {
-    alert('Payment processed successfully! Welcome to SEO Insights!');
+    notification.success('Payment processed successfully! Welcome to SEO Insights!');
     setShowPlanModal(false);
     setShowLanding(false);
   };

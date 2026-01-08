@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import notification from '../utils/notification';
 
 const Reports = ({ authToken, API_BASE_URL }) => {
   const [reports, setReports] = useState([]);
@@ -83,15 +84,15 @@ const Reports = ({ authToken, API_BASE_URL }) => {
     loadReports();
   }, [authToken, API_BASE_URL]);
   const generateNewReport = () => {
-    alert('Starting new report generation... This may take a few minutes.');
+    notification.info('Starting new report generation... This may take a few minutes.');
   };
 
   const viewReport = (id) => {
-    alert('Opening report #' + id + ' in viewer...');
+    notification.info('Opening report #' + id + ' in viewer...');
   };
 
   const downloadReportFile = (id) => {
-    alert('Downloading report #' + id + '...');
+    notification.info('Downloading report #' + id + '...');
   };
 
   return (

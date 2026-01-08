@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import notification from '../utils/notification';
 
 const RegisterModal = ({ onClose, onSwitchToLogin, onRegister, API_BASE_URL }) => {
   const [name, setName] = useState('');
@@ -12,32 +13,32 @@ const RegisterModal = ({ onClose, onSwitchToLogin, onRegister, API_BASE_URL }) =
     // Username (name) validation - only alphabets
     const nameRegex = /^[a-zA-Z\s]+$/;
     if (!name || name.trim().length < 2) {
-      alert('Name must be at least 2 characters');
+      notification.error('Name must be at least 2 characters');
       return;
     }
     if (!nameRegex.test(name.trim())) {
-      alert('Username (name) can only contain alphabets and spaces');
+      notification.error('Username (name) can only contain alphabets and spaces');
       return;
     }
     
     // Email validation - proper format (example@gmail.com)
     const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
     if (!email || !emailRegex.test(email.trim())) {
-      alert('Please enter a valid email address (e.g., example@gmail.com)');
+      notification.error('Please enter a valid email address (e.g., example@gmail.com)');
       return;
     }
     
     // Password validation - min 8 characters, one uppercase, one special character
     if (!password || password.length < 8) {
-      alert('Password must be at least 8 characters long');
+      notification.error('Password must be at least 8 characters long');
       return;
     }
     if (!/[A-Z]/.test(password)) {
-      alert('Password must contain at least one uppercase letter');
+      notification.error('Password must contain at least one uppercase letter');
       return;
     }
     if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
-      alert('Password must contain at least one special character');
+      notification.error('Password must contain at least one special character');
       return;
     }
 
@@ -55,20 +56,20 @@ const RegisterModal = ({ onClose, onSwitchToLogin, onRegister, API_BASE_URL }) =
 
       const data = await res.json();
       if (!res.ok) {
-        alert(data.message || 'Registration failed');
+        notification.error(data.message || 'Registration failed');
         return;
       }
 
-      alert('Account created successfully! Redirecting to dashboard...');
+      notification.success('Account created successfully! Redirecting to dashboard...');
       onRegister(data.token, data.user);
     } catch (err) {
       console.error(err);
-      alert('Unable to connect to server. Is the backend running?');
+      notification.error('Unable to connect to server. Is the backend running?');
     }
   };
 
   const socialLogin = (provider) => {
-    alert(`Redirecting to ${provider} login...`);
+    notification.info(`Redirecting to ${provider} login...`);
   };
 
   return (

@@ -307,12 +307,16 @@ body {
 
 .modal-content {
     background: white;
-    padding: 3rem;
+    padding: 2rem;
     border-radius: 20px;
-    max-width: 450px;
+    max-width: 500px;
     width: 90%;
+    max-height: 90vh;
     position: relative;
     animation: slideDown 0.3s ease;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-gutter: stable;
 }
 
 @keyframes slideDown {
@@ -341,13 +345,48 @@ body {
 }
 
 .modal-content h2 {
-    margin-bottom: 1.5rem;
+    margin-bottom: 1.2rem;
     color: #333;
     text-align: center;
+    font-size: 1.8rem;
+}
+
+.modal-content::-webkit-scrollbar {
+    width: 6px;
+}
+
+.modal-content::-webkit-scrollbar-track {
+    background: transparent;
+    margin: 10px 0;
+    border-radius: 10px;
+}
+
+.modal-content::-webkit-scrollbar-thumb {
+    background: rgba(102, 126, 234, 0.3);
+    border-radius: 10px;
+    transition: background 0.3s ease;
+    margin: 2px;
+}
+
+.modal-content::-webkit-scrollbar-thumb:hover {
+    background: rgba(102, 126, 234, 0.6);
 }
 
 .form-group {
-    margin-bottom: 1.5rem;
+    margin-bottom: 1.2rem;
+}
+
+.modal-content .social-login {
+    margin-bottom: 1rem;
+}
+
+.modal-content .auth-divider {
+    margin: 1rem 0;
+}
+
+.modal-content .auth-switch {
+    margin-top: 1rem;
+    padding-top: 1rem;
 }
 
 .form-group label {
@@ -954,7 +993,128 @@ body {
     margin-top: 0.5rem;
 }
 
+/* Modern Notification System */
+.notification-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 10000;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    pointer-events: none;
+}
+
+.notification {
+    background: white;
+    padding: 1rem 1.5rem;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+    min-width: 300px;
+    max-width: 400px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    opacity: 0;
+    transform: translateX(400px);
+    transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    pointer-events: auto;
+    border-left: 4px solid #667eea;
+}
+
+.notification.show {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+.notification.hide {
+    opacity: 0;
+    transform: translateX(400px);
+}
+
+.notification-content {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex: 1;
+}
+
+.notification-content i {
+    font-size: 1.2rem;
+    flex-shrink: 0;
+}
+
+.notification-content span {
+    color: #333;
+    font-size: 0.95rem;
+    line-height: 1.4;
+}
+
+.notification-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    color: #999;
+    cursor: pointer;
+    padding: 0;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.2s;
+    flex-shrink: 0;
+}
+
+.notification-close:hover {
+    color: #333;
+}
+
+.notification-success {
+    border-left-color: #2ecc71;
+}
+
+.notification-success .notification-content i {
+    color: #2ecc71;
+}
+
+.notification-error {
+    border-left-color: #e74c3c;
+}
+
+.notification-error .notification-content i {
+    color: #e74c3c;
+}
+
+.notification-warning {
+    border-left-color: #f39c12;
+}
+
+.notification-warning .notification-content i {
+    color: #f39c12;
+}
+
+.notification-info {
+    border-left-color: #667eea;
+}
+
+.notification-info .notification-content i {
+    color: #667eea;
+}
+
 @media (max-width: 768px) {
+    .notification-container {
+        top: 10px;
+        right: 10px;
+        left: 10px;
+    }
+
+    .notification {
+        min-width: auto;
+        max-width: 100%;
+    }
+
     .hero-section h1 {
         font-size: 2rem;
     }

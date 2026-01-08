@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import notification from '../utils/notification';
 
 const Dashboard = ({ authToken, API_BASE_URL }) => {
   const [keywordInput, setKeywordInput] = useState('');
@@ -72,7 +73,7 @@ const Dashboard = ({ authToken, API_BASE_URL }) => {
       if (!res.ok) {
         const errorMsg = data.message || 'Failed to run keyword research';
         console.error('Keyword research error:', errorMsg);
-        alert(errorMsg);
+        notification.error(errorMsg);
         setResearchResult(null);
         return;
       }
@@ -82,12 +83,12 @@ const Dashboard = ({ authToken, API_BASE_URL }) => {
         setResearchResult(data);
       } else {
         console.error('Invalid keyword research response:', data);
-        alert('Received invalid data from keyword research API');
+        notification.error('Received invalid data from keyword research API');
         setResearchResult(null);
       }
     } catch (err) {
       console.error('Keyword research failed', err);
-      alert('Failed to connect to keyword research API. Please check your connection.');
+      notification.error('Failed to connect to keyword research API. Please check your connection.');
       setResearchResult(null);
     } finally {
       setIsResearchLoading(false);
@@ -96,12 +97,12 @@ const Dashboard = ({ authToken, API_BASE_URL }) => {
 
   const runAnalysis = async () => {
     if (!keywordInput.trim()) {
-      alert('Please enter a keyword or URL');
+      notification.warning('Please enter a keyword or URL');
       return;
     }
 
     if (!authToken) {
-      alert('Please log in first to save your analysis.');
+      notification.warning('Please log in first to save your analysis.');
       return;
     }
 
@@ -121,11 +122,11 @@ const Dashboard = ({ authToken, API_BASE_URL }) => {
       setIsLoading(false);
 
       if (!res.ok) {
-        alert(data.message || 'Failed to save analysis input');
+        notification.error(data.message || 'Failed to save analysis input');
         return;
       }
 
-      alert('Analysis input saved to database!');
+      notification.success('Analysis input saved to database!');
       const inputValue = keywordInput.trim();
       setKeywordInput('');
 
@@ -136,12 +137,12 @@ const Dashboard = ({ authToken, API_BASE_URL }) => {
     } catch (err) {
       console.error(err);
       setIsLoading(false);
-      alert('Unable to connect to server. Is the backend running?');
+      notification.error('Unable to connect to server. Is the backend running?');
     }
   };
 
   const downloadReport = () => {
-    alert('Generating SEO report... Download will start shortly.');
+    notification.info('Generating SEO report... Download will start shortly.');
   };
 
   return (
