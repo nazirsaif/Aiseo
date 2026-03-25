@@ -1,364 +1,314 @@
-const { pipeline } = require('@xenova/transformers');
-
-// Initialize the Sentence Transformer model (lazy loading)
-let embeddingModel = null;
-let modelLoading = false;
-
 /**
- * Initialize the Sentence Transformer model
- * Uses a lightweight model suitable for semantic similarity
+ * Keyword Research Service — v2
+ *
+ * Improvements over v1:
+ *  - Model loading uses a shared Promise (no polling loop race condition)
+ *  - Real n-gram extraction from competitor HTML/text (not a fixed 20-template list)
+ *  - Stop-word filtering for cleaner phrase candidates
+ *  - Pattern-based local intent classifier (informational/transactional/commercial/navigational)
+ *  - Search volume & difficulty clearly labelled as ESTIMATED
+ *  - Removed Math.random() fake competitor counts
+ *  - Ollama intent classification used when available (graceful fallback)
  */
+
+const { pipeline } = require('@xenova/transformers');
+const ollamaService = require('./ollamaService');
+
+// ─── Stop words ───────────────────────────────────────────────────────────────
+
+const STOP_WORDS = new Set([
+  'a','an','the','and','or','but','in','on','at','to','for','of','with','by',
+  'from','up','about','into','through','during','is','are','was','were','be',
+  'been','being','have','has','had','do','does','did','will','would','could',
+  'should','may','might','shall','can','it','its','this','that','these','those',
+  'i','you','he','she','we','they','who','which','what','when','where','how',
+  'all','both','each','few','more','most','other','some','such','no','not',
+  'only','own','same','so','than','too','very','just','as','if','then','because',
+  'also','after','before','between','here','there','any','our','your','their',
+  'my','his','her','its','us','them','me','him','her'
+]);
+
+// ─── Model loading (shared Promise — no polling race condition) ───────────────
+
+let embeddingModel = null;
+let modelLoadPromise = null;
+
 async function initializeModel() {
   if (embeddingModel) return embeddingModel;
-  if (modelLoading) {
-    // Wait for ongoing loading
-    while (modelLoading) {
-      await new Promise(resolve => setTimeout(resolve, 100));
+  if (modelLoadPromise) return modelLoadPromise; // concurrent calls share the same Promise
+
+  modelLoadPromise = (async () => {
+    console.log('[KeywordService] Loading Sentence Transformer model (all-MiniLM-L6-v2)…');
+    console.log('[KeywordService] First-time download may take a few minutes; model is cached after.');
+    try {
+      const model = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
+      embeddingModel = model;
+      console.log('[KeywordService] ✅ Model loaded.');
+      return model;
+    } catch (err) {
+      modelLoadPromise = null; // allow retry on next call
+      console.error('[KeywordService] Model load failed:', err.message);
+      throw err;
     }
-    return embeddingModel;
-  }
+  })();
 
-  try {
-    modelLoading = true;
-    console.log('Loading Sentence Transformer model...');
-    console.log('Note: First-time download may take a few minutes. Model will be cached for future use.');
-    // Using a lightweight multilingual model for semantic similarity
-    embeddingModel = await pipeline(
-      'feature-extraction',
-      'Xenova/all-MiniLM-L6-v2' // Lightweight, fast, good for semantic similarity
-    );
-    console.log('✅ Sentence Transformer model loaded successfully');
-    modelLoading = false;
-    return embeddingModel;
-  } catch (error) {
-    console.error('Error loading Sentence Transformer model:', error);
-    console.error('This may be due to network issues or insufficient disk space.');
-    modelLoading = false;
-    throw error;
-  }
+  return modelLoadPromise;
 }
 
-/**
- * Generate embeddings for text using Sentence Transformer
- */
+// ─── Embedding helpers ────────────────────────────────────────────────────────
+
 async function generateEmbedding(text) {
-  try {
-    const model = await initializeModel();
-    const output = await model(text, { pooling: 'mean', normalize: true });
-    return Array.from(output.data);
-  } catch (error) {
-    console.error('Error generating embedding:', error);
-    throw error;
-  }
+  const model = await initializeModel();
+  const output = await model(text, { pooling: 'mean', normalize: true });
+  return Array.from(output.data);
 }
 
-/**
- * Calculate cosine similarity between two embeddings
- */
-function cosineSimilarity(embedding1, embedding2) {
-  if (!embedding1 || !embedding2 || embedding1.length !== embedding2.length) {
-    return 0;
+function cosineSimilarity(a, b) {
+  if (!a || !b || a.length !== b.length) return 0;
+  let dot = 0, na = 0, nb = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    na  += a[i] * a[i];
+    nb  += b[i] * b[i];
   }
-
-  let dotProduct = 0;
-  let norm1 = 0;
-  let norm2 = 0;
-
-  for (let i = 0; i < embedding1.length; i++) {
-    dotProduct += embedding1[i] * embedding2[i];
-    norm1 += embedding1[i] * embedding1[i];
-    norm2 += embedding2[i] * embedding2[i];
-  }
-
-  const denominator = Math.sqrt(norm1) * Math.sqrt(norm2);
-  return denominator === 0 ? 0 : dotProduct / denominator;
+  const denom = Math.sqrt(na) * Math.sqrt(nb);
+  return denom === 0 ? 0 : dot / denom;
 }
 
-/**
- * Extract keywords and phrases from text using semantic analysis
- */
-function extractPhrases(text, baseKeyword) {
-  if (!text || !baseKeyword) return [];
+// ─── Text → tokens (stop-word filtered) ──────────────────────────────────────
 
-  const baseKeywordLower = baseKeyword.toLowerCase();
-  const words = text
+function tokenize(text) {
+  return text
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, ' ')
     .split(/\s+/)
-    .filter(Boolean);
+    .filter(w => w.length > 2 && !STOP_WORDS.has(w));
+}
 
-  const phrases = new Set();
-  
-  // Extract 2-5 word phrases containing the base keyword
-  for (let i = 0; i < words.length; i++) {
-    if (words[i] === baseKeywordLower || words.slice(i, i + baseKeywordLower.split(' ').length).join(' ') === baseKeywordLower) {
-      // Extract phrases before, containing, and after the keyword
-      for (let start = Math.max(0, i - 2); start <= i; start++) {
-        for (let end = i + baseKeywordLower.split(' ').length; end <= Math.min(words.length, start + 6); end++) {
-          if (end - start >= 2 && end - start <= 5) {
-            const phrase = words.slice(start, end).join(' ');
-            if (phrase.includes(baseKeywordLower) && phrase !== baseKeywordLower) {
-              phrases.add(phrase);
-            }
-          }
-        }
-      }
-    }
+// ─── N-gram extraction from tokens ───────────────────────────────────────────
+
+function ngramsFromTokens(tokens, n) {
+  const result = new Map();
+  for (let i = 0; i <= tokens.length - n; i++) {
+    const gram = tokens.slice(i, i + n).join(' ');
+    result.set(gram, (result.get(gram) || 0) + 1);
   }
+  return result;
+}
 
-  // Also extract common long-tail patterns
-  const commonPatterns = [
-    `best ${baseKeywordLower}`,
-    `${baseKeywordLower} guide`,
-    `${baseKeywordLower} tips`,
-    `${baseKeywordLower} tools`,
-    `how to ${baseKeywordLower}`,
-    `${baseKeywordLower} for beginners`,
-    `${baseKeywordLower} strategies`,
-    `free ${baseKeywordLower}`,
-    `${baseKeywordLower} examples`,
-    `${baseKeywordLower} tutorial`,
-    `what is ${baseKeywordLower}`,
-    `${baseKeywordLower} review`,
-    `${baseKeywordLower} comparison`,
-    `${baseKeywordLower} vs`,
-    `top ${baseKeywordLower}`,
-    `${baseKeywordLower} software`,
-    `${baseKeywordLower} course`,
-    `${baseKeywordLower} training`,
-    `${baseKeywordLower} checklist`,
-    `${baseKeywordLower} template`
+/**
+ * Extract real keyword phrases from competitor structured data.
+ * Works with the elements objects returned by seoAuditService.
+ *
+ * Returns Map<phrase, { count, competitors: Set }>
+ */
+function extractPhrasesFromCompetitors(competitorData, baseKeyword) {
+  const phraseMap = new Map();
+  const baseTokens = tokenize(baseKeyword);
+
+  competitorData.forEach((comp, idx) => {
+    const el = comp.elements || {};
+    const textBlocks = [
+      el.title || '',
+      el.metaDescription || '',
+      ...(el.h1Tags || []),
+      ...(el.h2Tags || []),
+      ...(el.h3Tags || [])
+    ].join(' ');
+
+    const tokens = tokenize(textBlocks);
+    if (tokens.length < 2) return;
+
+    // Extract 2, 3, 4-grams
+    for (let n = 2; n <= 4; n++) {
+      const grams = ngramsFromTokens(tokens, n);
+      grams.forEach((count, phrase) => {
+        // Only keep phrases that share at least one token with the base keyword
+        const phraseTokens = phrase.split(' ');
+        const hasOverlap = phraseTokens.some(pt => baseTokens.includes(pt)) ||
+                           phrase.includes(baseKeyword.toLowerCase());
+        if (!hasOverlap) return;
+
+        const existing = phraseMap.get(phrase) || { count: 0, competitors: new Set() };
+        existing.count += count;
+        existing.competitors.add(comp.url || `comp-${idx}`);
+        phraseMap.set(phrase, existing);
+      });
+    }
+  });
+
+  return phraseMap;
+}
+
+/**
+ * Supplement with common long-tail patterns (used as a small addition,
+ * not as the primary source as in v1).
+ */
+function getPatternSupplement(baseKeyword) {
+  const kw = baseKeyword.toLowerCase();
+  return [
+    `best ${kw}`, `${kw} guide`, `${kw} tips`, `${kw} tools`,
+    `how to ${kw}`, `${kw} for beginners`, `${kw} strategies`,
+    `${kw} examples`, `${kw} tutorial`, `what is ${kw}`,
+    `${kw} review`, `${kw} comparison`, `${kw} software`,
+    `${kw} checklist`, `${kw} best practices`
   ];
+}
 
-  commonPatterns.forEach(pattern => phrases.add(pattern));
+// ─── Local intent classifier ─────────────────────────────────────────────────
 
-  return Array.from(phrases);
+function classifyIntentLocal(keyword) {
+  const kw = keyword.toLowerCase();
+  if (/\b(buy|purchase|price|cheap|deal|discount|order|shop|cost|subscribe|free trial)\b/.test(kw))
+    return 'transactional';
+  if (/\b(best|top|vs|versus|review|compare|comparison|alternatives?|recommend)\b/.test(kw))
+    return 'commercial';
+  if (/\b(login|sign in|official|website|homepage|download|app)\b/.test(kw))
+    return 'navigational';
+  return 'informational';
+}
+
+// ─── Search volume & difficulty (honestly estimated) ─────────────────────────
+
+/**
+ * Volume is estimated from word count only — clearly labelled as such.
+ * These are rough heuristic ranges, not real data.
+ */
+function estimateSearchVolume(keyword) {
+  const wc = keyword.split(' ').length;
+  if (wc === 1) return { low: 1000,  high: 50000 };
+  if (wc === 2) return { low: 500,   high: 10000 };
+  if (wc === 3) return { low: 100,   high: 3000  };
+  return              { low: 10,    high: 500   };
 }
 
 /**
- * Calculate estimated search volume based on keyword characteristics
+ * Difficulty estimated from competitor saturation and keyword length.
+ * Short, high-frequency keywords = harder; long-tail = easier.
  */
-function estimateSearchVolume(keyword, baseKeyword, relevanceScore) {
-  const wordCount = keyword.split(' ').length;
-  const baseWordCount = baseKeyword.split(' ').length;
-  
-  // Longer keywords typically have lower search volume
-  let volume = 1000;
-  
-  // Adjust based on length
-  if (wordCount === 2) volume = 5000;
-  else if (wordCount === 3) volume = 2000;
-  else if (wordCount === 4) volume = 800;
-  else volume = 300;
-  
-  // Adjust based on relevance
-  volume = Math.round(volume * (relevanceScore / 100));
-  
-  // Ensure minimum volume
-  return Math.max(100, volume);
-}
-
-/**
- * Calculate estimated difficulty based on competitor count and keyword characteristics
- */
-function estimateDifficulty(competitorCount, keywordLength, relevanceScore) {
-  // More competitors = harder
+function estimateDifficulty(competitorCount, wordCount) {
+  if (wordCount >= 4) return 'Easy';
   if (competitorCount >= 5) return 'Hard';
-  if (competitorCount >= 3) return 'Medium';
-  
-  // Longer keywords = easier (long-tail)
-  if (keywordLength >= 4) return 'Easy';
-  if (keywordLength === 3) return 'Medium';
-  
-  // High relevance with many competitors = hard
-  if (relevanceScore >= 80 && competitorCount >= 2) return 'Hard';
-  
+  if (competitorCount >= 3 || wordCount <= 2) return 'Medium';
   return 'Easy';
 }
 
-/**
- * Perform semantic keyword research using Sentence Transformer
- */
+// ─── Core semantic keyword research ──────────────────────────────────────────
+
 async function performSemanticKeywordResearch(baseKeyword, competitorData) {
-  try {
-    console.log(`Starting semantic keyword research for: "${baseKeyword}"`);
-    
-    // Generate embedding for base keyword
-    const baseEmbedding = await generateEmbedding(baseKeyword);
-    console.log('✅ Base keyword embedding generated');
+  console.log(`[KeywordService] Semantic research for: "${baseKeyword}"`);
 
-    // Extract all potential phrases from competitor data
-    const allPhrases = new Map();
-    
-    competitorData.forEach((competitor, index) => {
-      const textBlocks = [
-        competitor.elements?.title || '',
-        competitor.elements?.metaDescription || '',
-        ...(competitor.elements?.h1Tags || []),
-        ...(competitor.elements?.h2Tags || [])
-      ].join(' ');
+  const baseEmbedding = await generateEmbedding(baseKeyword);
 
-      const phrases = extractPhrases(textBlocks, baseKeyword);
-      
-      phrases.forEach(phrase => {
-        if (!allPhrases.has(phrase)) {
-          allPhrases.set(phrase, {
-            keyword: phrase,
-            occurrences: 0,
-            competitors: new Set(),
-            sources: []
-          });
-        }
-        const entry = allPhrases.get(phrase);
-        entry.occurrences += 1;
-        entry.competitors.add(competitor.url || `competitor-${index}`);
-        entry.sources.push({
-          url: competitor.url,
-          title: competitor.elements?.title || ''
-        });
+  // 1. Real phrases from competitor content
+  const phraseMap = extractPhrasesFromCompetitors(competitorData, baseKeyword);
+  console.log(`[KeywordService] Extracted ${phraseMap.size} real competitor phrases`);
+
+  // 2. Supplement with patterns (but only add those not already found)
+  const patterns = getPatternSupplement(baseKeyword);
+  patterns.forEach(p => {
+    if (!phraseMap.has(p)) {
+      phraseMap.set(p, { count: 1, competitors: new Set(['pattern']) });
+    }
+  });
+
+  const allPhrases = Array.from(phraseMap.keys());
+  const suggestions = [];
+
+  // 3. Score each phrase with semantic similarity, process in batches
+  const batchSize = 10;
+  for (let i = 0; i < allPhrases.length; i += batchSize) {
+    const batch = allPhrases.slice(i, i + batchSize);
+    const embeddings = await Promise.all(batch.map(p => generateEmbedding(p)));
+
+    batch.forEach((phrase, bi) => {
+      const sim = cosineSimilarity(baseEmbedding, embeddings[bi]);
+      const relevanceScore = Math.round(sim * 100);
+
+      if (sim < 0.25) return; // filter out irrelevant phrases
+
+      const data = phraseMap.get(phrase);
+      const wordCount = phrase.split(' ').length;
+      const vol = estimateSearchVolume(phrase);
+
+      suggestions.push({
+        keyword: phrase,
+        type: wordCount >= 3 ? 'long-tail' : 'short-tail',
+        intent: classifyIntentLocal(phrase),
+        relevanceScore: Math.max(25, relevanceScore),
+        estimatedSearchVolume: vol,          // { low, high } — not a single fake number
+        estimatedDifficulty: estimateDifficulty(data.competitors.size, wordCount),
+        competitorCount: data.competitors.size,
+        occurrences: data.count,
+        isFromCompetitors: !data.competitors.has('pattern'), // flag: real vs pattern
+        sources: [] // sources stripped — url list was noisy in v1
       });
     });
-
-    console.log(`Found ${allPhrases.size} potential keyword phrases`);
-
-    // Calculate semantic similarity for each phrase
-    const keywordSuggestions = [];
-    const phraseArray = Array.from(allPhrases.keys());
-    
-    // Process in batches to avoid memory issues
-    const batchSize = 10;
-    for (let i = 0; i < phraseArray.length; i += batchSize) {
-      const batch = phraseArray.slice(i, i + batchSize);
-      const embeddings = await Promise.all(
-        batch.map(phrase => generateEmbedding(phrase))
-      );
-
-      batch.forEach((phrase, batchIndex) => {
-        const embedding = embeddings[batchIndex];
-        const similarity = cosineSimilarity(baseEmbedding, embedding);
-        const relevanceScore = Math.round(similarity * 100);
-        
-        // Only include phrases with reasonable similarity (>= 0.3)
-        if (similarity >= 0.3) {
-          const phraseData = allPhrases.get(phrase);
-          keywordSuggestions.push({
-            keyword: phrase,
-            type: phrase.split(' ').length >= 3 ? 'long-tail' : 'short-tail',
-            relevanceScore: Math.max(30, relevanceScore), // Minimum 30 for relevance
-            estimatedSearchVolume: estimateSearchVolume(phrase, baseKeyword, relevanceScore),
-            estimatedDifficulty: estimateDifficulty(
-              phraseData.competitors.size,
-              phrase.split(' ').length,
-              relevanceScore
-            ),
-            competitorCount: phraseData.competitors.size,
-            occurrences: phraseData.occurrences,
-            sources: phraseData.sources.slice(0, 3) // Limit sources
-          });
-        }
-      });
-    }
-
-    // Sort by relevance score (descending)
-    keywordSuggestions.sort((a, b) => b.relevanceScore - a.relevanceScore);
-
-    console.log(`✅ Generated ${keywordSuggestions.length} semantically relevant keyword suggestions`);
-    
-    return keywordSuggestions;
-  } catch (error) {
-    console.error('Error in semantic keyword research:', error);
-    throw error;
   }
+
+  // 4. Try Ollama intent enrichment (replaces local classifier where available)
+  const topKeywords = suggestions.slice(0, 20).map(s => s.keyword);
+  const ollamaIntents = await ollamaService.classifyKeywordIntents(topKeywords);
+  if (ollamaIntents.available && ollamaIntents.intents.length > 0) {
+    const intentMap = new Map(ollamaIntents.intents.map(i => [i.keyword, i.intent]));
+    suggestions.forEach(s => {
+      if (intentMap.has(s.keyword)) s.intent = intentMap.get(s.keyword);
+    });
+    console.log(`[KeywordService] Ollama intent classification applied to top ${topKeywords.length} keywords`);
+  }
+
+  suggestions.sort((a, b) => b.relevanceScore - a.relevanceScore);
+  console.log(`[KeywordService] Generated ${suggestions.length} suggestions`);
+  return suggestions;
 }
 
-/**
- * Generate fallback keyword suggestions when no competitor data is available
- */
-async function generateFallbackSuggestions(baseKeyword) {
-  try {
-    console.log('Generating fallback suggestions using semantic analysis...');
-    
-    const baseEmbedding = await generateEmbedding(baseKeyword);
-    
-    // Generate common long-tail patterns
-    const patterns = [
-      `best ${baseKeyword}`,
-      `${baseKeyword} guide`,
-      `${baseKeyword} tips`,
-      `${baseKeyword} tools`,
-      `how to ${baseKeyword}`,
-      `${baseKeyword} for beginners`,
-      `${baseKeyword} strategies`,
-      `free ${baseKeyword}`,
-      `${baseKeyword} examples`,
-      `${baseKeyword} tutorial`,
-      `what is ${baseKeyword}`,
-      `${baseKeyword} review`,
-      `${baseKeyword} comparison`,
-      `${baseKeyword} vs`,
-      `top ${baseKeyword}`,
-      `${baseKeyword} software`,
-      `${baseKeyword} course`,
-      `${baseKeyword} training`,
-      `${baseKeyword} checklist`,
-      `${baseKeyword} template`,
-      `${baseKeyword} benefits`,
-      `${baseKeyword} features`,
-      `${baseKeyword} pricing`,
-      `${baseKeyword} alternatives`,
-      `${baseKeyword} best practices`
-    ];
+// ─── Fallback (when no competitor data available) ─────────────────────────────
 
+async function generateFallbackSuggestions(baseKeyword) {
+  console.log('[KeywordService] No competitor data — generating pattern-based fallback suggestions');
+  try {
+    const baseEmbedding = await generateEmbedding(baseKeyword);
+    const patterns = getPatternSupplement(baseKeyword);
     const suggestions = [];
-    
-    // Process in batches
+
     const batchSize = 10;
     for (let i = 0; i < patterns.length; i += batchSize) {
       const batch = patterns.slice(i, i + batchSize);
-      const embeddings = await Promise.all(
-        batch.map(pattern => generateEmbedding(pattern))
-      );
+      const embeddings = await Promise.all(batch.map(p => generateEmbedding(p)));
 
-      batch.forEach((pattern, batchIndex) => {
-        const embedding = embeddings[batchIndex];
-        const similarity = cosineSimilarity(baseEmbedding, embedding);
-        const relevanceScore = Math.round(similarity * 100);
-
+      batch.forEach((phrase, bi) => {
+        const sim = cosineSimilarity(baseEmbedding, embeddings[bi]);
+        const wc = phrase.split(' ').length;
+        const vol = estimateSearchVolume(phrase);
         suggestions.push({
-          keyword: pattern,
-          type: pattern.split(' ').length >= 3 ? 'long-tail' : 'short-tail',
-          relevanceScore: Math.max(50, relevanceScore),
-          estimatedSearchVolume: estimateSearchVolume(pattern, baseKeyword, relevanceScore),
-          estimatedDifficulty: estimateDifficulty(0, pattern.split(' ').length, relevanceScore),
-          competitorCount: Math.floor(Math.random() * 3) + 1, // Random 1-3 for fallback
-          occurrences: 1,
-          sources: []
+          keyword: phrase,
+          type: wc >= 3 ? 'long-tail' : 'short-tail',
+          intent: classifyIntentLocal(phrase),
+          relevanceScore: Math.max(40, Math.round(sim * 100)),
+          estimatedSearchVolume: vol,
+          estimatedDifficulty: estimateDifficulty(0, wc),
+          competitorCount: 0,
+          occurrences: 0,
+          isFromCompetitors: false
         });
       });
     }
 
-    // Sort by relevance
     suggestions.sort((a, b) => b.relevanceScore - a.relevanceScore);
-    
     return suggestions;
-  } catch (error) {
-    console.error('Error generating fallback suggestions:', error);
-    // Return basic suggestions if semantic analysis fails
-    return [
-      `best ${baseKeyword}`,
-      `${baseKeyword} guide`,
-      `${baseKeyword} tips`,
-      `how to ${baseKeyword}`,
-      `${baseKeyword} for beginners`
-    ].map((keyword, index) => ({
-      keyword,
+  } catch (err) {
+    console.error('[KeywordService] Fallback generation failed:', err.message);
+    // Last-resort static fallback
+    return getPatternSupplement(baseKeyword).map((kw, i) => ({
+      keyword: kw,
       type: 'long-tail',
-      relevanceScore: 80 - (index * 5),
-      estimatedSearchVolume: Math.max(100, 1000 - index * 100),
-      estimatedDifficulty: index < 3 ? 'Hard' : index < 6 ? 'Medium' : 'Easy',
-      competitorCount: index < 3 ? 5 : index < 6 ? 3 : 1,
-      occurrences: 1,
-      sources: []
+      intent: classifyIntentLocal(kw),
+      relevanceScore: 70 - i * 2,
+      estimatedSearchVolume: { low: 50, high: 500 },
+      estimatedDifficulty: 'Medium',
+      competitorCount: 0,
+      occurrences: 0,
+      isFromCompetitors: false
     }));
   }
 }
@@ -366,8 +316,8 @@ async function generateFallbackSuggestions(baseKeyword) {
 module.exports = {
   performSemanticKeywordResearch,
   generateFallbackSuggestions,
-  extractPhrases,
+  extractPhrasesFromCompetitors,
   estimateSearchVolume,
-  estimateDifficulty
+  estimateDifficulty,
+  classifyIntentLocal
 };
-

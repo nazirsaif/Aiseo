@@ -30,8 +30,8 @@ async function searchWebForCompetitors(keyword, maxResults = 10) {
     console.log(`Google search failed: ${error.message}`);
   }
   
-  // Method 3: Generate realistic competitors based on keyword
-  console.log('⚠️ Web search failed, generating keyword-based competitors...');
+  // Method 3: All real search methods failed — return clearly-flagged fallback
+  console.warn('[WebSearch] All real search methods failed. Using fallback placeholder URLs.');
   return generateKeywordBasedCompetitors(keyword, maxResults);
 }
 
@@ -225,60 +225,45 @@ async function searchGoogleHTML(keyword, maxResults) {
 }
 
 /**
- * Generate realistic competitors based on keyword
- * This creates URLs that are likely to rank for the keyword
+ * Generate fallback placeholder competitors when web search is unavailable.
+ *
+ * ⚠️  These are NOT real search results — they are known high-authority domains
+ * that commonly appear for informational queries.  Results are explicitly flagged
+ * with isFallback:true so the frontend / keyword service can treat them differently.
+ * Only Wikipedia is likely to actually exist for a given keyword slug.
  */
 function generateKeywordBasedCompetitors(keyword, maxResults) {
   const keywordLower = keyword.toLowerCase().trim();
   const keywordSlug = keywordLower.replace(/\s+/g, '-');
   const keywordEncoded = encodeURIComponent(keyword);
-  
-  // Common domains and patterns that often rank
+
+  // Only include URLs that are very likely to genuinely exist
   const patterns = [
     {
-      url: `https://www.wikipedia.org/wiki/${keywordEncoded}`,
-      title: `${keyword} - Wikipedia`
-    },
-    {
       url: `https://en.wikipedia.org/wiki/${keywordEncoded}`,
-      title: `${keyword} - Wikipedia, the free encyclopedia`
-    },
-    {
-      url: `https://www.${keywordSlug}.com`,
-      title: `${keyword} - Official Website`
-    },
-    {
-      url: `https://${keywordSlug}.org`,
-      title: `${keyword} - Information and Resources`
-    },
-    {
-      url: `https://www.${keywordSlug}.net`,
-      title: `${keyword} - Complete Guide`
-    },
-    {
-      url: `https://dictionary.cambridge.org/dictionary/english/${keywordSlug}`,
-      title: `${keyword} - Definition and Meaning`
-    },
-    {
-      url: `https://www.merriam-webster.com/dictionary/${keywordSlug}`,
-      title: `${keyword} Definition & Meaning`
+      title: `${keyword} - Wikipedia`
     },
     {
       url: `https://www.britannica.com/topic/${keywordSlug}`,
       title: `${keyword} | Britannica`
+    },
+    {
+      url: `https://dictionary.cambridge.org/dictionary/english/${keywordSlug}`,
+      title: `${keyword} - Cambridge Dictionary`
     }
   ];
-  
+
   const results = [];
   for (let i = 0; i < Math.min(patterns.length, maxResults); i++) {
     results.push({
       url: patterns[i].url,
       title: patterns[i].title,
-      rank: i + 1
+      rank: i + 1,
+      isFallback: true  // ← always flag so callers know this is not real SERP data
     });
   }
-  
-  console.log(`Generated ${results.length} keyword-based competitor URLs`);
+
+  console.warn(`[WebSearch] ⚠️  Real search failed — returning ${results.length} fallback placeholder URLs (not actual SERP results).`);
   return results;
 }
 

@@ -3,13 +3,82 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const rateLimit = require('express-rate-limit');
 require('dotenv').config();
  
 const app = express();
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'changeme_dev_secret';
 
-// Middleware
+// ─── Rate limiters ────────────────────────────────────────────────────────────
+// Expensive endpoints (external HTTP + ML inference) are tightly limited.
+
+const auditLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Too many audit requests. Please wait 15 minutes before trying again.' }
+});
+
+const keywordLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Too many keyword research requests. Please wait 15 minutes.' }
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Too many authentication attempts. Please wait 15 minutes.' }
+});
+
+// ─── SSRF protection ─────────────────────────────────────────────────────────
+// Blocks requests to private/loopback IP ranges to prevent server-side forgery.
+
+function isSafeUrl(urlString) {
+  try {
+    // Block non-http protocols before any URL manipulation
+    // Catches file://, ftp://, javascript:, etc.
+    if (urlString.includes('://') &&
+        !urlString.startsWith('http://') &&
+        !urlString.startsWith('https://')) {
+      return false;
+    }
+
+    const urlToParse = urlString.startsWith('http') ? urlString : `https://${urlString}`;
+    const url = new URL(urlToParse);
+
+    // Only allow http and https
+    if (!['http:', 'https:'].includes(url.protocol)) return false;
+
+    const host = url.hostname.toLowerCase();
+
+    // Block loopback
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return false;
+
+    // Block private IPv4 ranges
+    const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (ipv4) {
+      const [, a, b] = ipv4.map(Number);
+      if (a === 10)                          return false; // 10.0.0.0/8
+      if (a === 172 && b >= 16 && b <= 31)   return false; // 172.16.0.0/12
+      if (a === 192 && b === 168)             return false; // 192.168.0.0/16
+      if (a === 169 && b === 254)             return false; // link-local
+      if (a === 0)                            return false; // 0.x.x.x
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// ─── Middleware ───────────────────────────────────────────────────────────────
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -185,7 +254,7 @@ function toPublicUser(userDoc) {
   };
 }
 
-app.post('/api/auth/register', async (req, res) => {
+app.post('/api/auth/register', authLimiter, async (req, res) => {
   try {
     const { name, email, password, company } = req.body;
 
@@ -225,7 +294,7 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -334,8 +403,9 @@ app.get('/api/dashboard/keywords', auth, async (req, res) => {
 const seoAuditService = require('./services/seoAuditService');
 const keywordResearchService = require('./services/keywordResearchService');
 const webSearchService = require('./services/webSearchService');
+const ollamaService = require('./services/ollamaService');
 
-app.post('/api/seo-audit', auth, async (req, res) => {
+app.post('/api/seo-audit', auth, auditLimiter, async (req, res) => {
   try {
     const { url, html, deepCrawl, maxDepth, maxPages } = req.body;
 
@@ -349,6 +419,11 @@ app.post('/api/seo-audit', auth, async (req, res) => {
 
     if (!url && !html) {
       return res.status(400).json({ message: 'Either URL or HTML content is required' });
+    }
+
+    // SSRF protection — block private/loopback URLs
+    if (url && !isSafeUrl(url)) {
+      return res.status(400).json({ message: 'Invalid URL: private, loopback, or non-HTTP URLs are not allowed.' });
     }
 
     // Perform SEO audit - use deep crawl if requested
@@ -522,6 +597,32 @@ app.post('/api/seo-audit', auth, async (req, res) => {
       });
     }
 
+    // ── Ollama enrichment (non-blocking, graceful fallback) ──
+    let ollamaEnrichment = { available: false };
+    try {
+      const [recResult, gradeResult] = await Promise.all([
+        ollamaService.generateSEORecommendations(auditResult.elements, auditResult.audit),
+        ollamaService.generateGradeJustification(
+          auditResult.audit.score,
+          auditResult.audit.grade,
+          auditResult.audit.issues
+        )
+      ]);
+      ollamaEnrichment = {
+        available: recResult.available,
+        llmRecommendations: recResult.recommendations,
+        gradeJustification: gradeResult.justification
+      };
+      if (recResult.available) {
+        console.log('[Ollama] SEO enrichment applied successfully');
+      } else {
+        console.log('[Ollama] Not available — serving rule-based results only');
+      }
+    } catch (ollamaErr) {
+      console.warn('[Ollama] Enrichment error (non-fatal):', ollamaErr.message);
+    }
+    auditResult.ollama = ollamaEnrichment;
+
     // Save audit result to database (regular single page audit)
     console.log('Saving audit to database...');
     console.log('User ID:', req.userId);
@@ -609,7 +710,7 @@ app.post('/api/seo-audit', auth, async (req, res) => {
 
 // Keyword Research & Competitive Analysis (F5, F6, F7)
 // Uses Sentence Transformer model for semantic analysis
-app.post('/api/keywords/research', auth, async (req, res) => {
+app.post('/api/keywords/research', auth, keywordLimiter, async (req, res) => {
   try {
     const { baseKeyword, competitorUrls, filters } = req.body;
 
