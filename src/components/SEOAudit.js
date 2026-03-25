@@ -506,6 +506,30 @@ const SEOAudit = ({ authToken, API_BASE_URL }) => {
                   <p><strong>Audit Date:</strong> {new Date(auditResult.timestamp).toLocaleString()}</p>
                 </div>
 
+                {/* AI Status Banner */}
+                {auditResult.ollama && (
+                  <div style={{ marginBottom: '2rem' }}>
+                    {auditResult.ollama.available ? (
+                      <div style={{ padding: '1.25rem 1.5rem', background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)', borderRadius: '10px', border: '1px solid #533483' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.75rem' }}>
+                          <span style={{ background: '#533483', color: '#e0aaff', padding: '0.25rem 0.75rem', borderRadius: '20px', fontSize: '0.78rem', fontWeight: '700', letterSpacing: '0.5px' }}>
+                            🤖 POWERED BY AI · llama3.2
+                          </span>
+                        </div>
+                        {auditResult.ollama.gradeJustification && (
+                          <p style={{ margin: 0, color: '#c9d1d9', fontStyle: 'italic', fontSize: '0.95rem', lineHeight: '1.6' }}>
+                            "{auditResult.ollama.gradeJustification}"
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <div style={{ padding: '0.75rem 1rem', background: '#fff8e1', borderRadius: '8px', border: '1px solid #ffe082', color: '#795548', fontSize: '0.9rem' }}>
+                        ⚠️ AI model unavailable — showing rule-based analysis. Start Ollama (<code>ollama serve</code>) for AI-powered insights.
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Elements Summary */}
             <div className="overview-cards" style={{ marginBottom: '2rem' }}>
               <div className="card">
@@ -624,6 +648,34 @@ const SEOAudit = ({ authToken, API_BASE_URL }) => {
               </div>
             )}
 
+            {/* AI Recommendations */}
+            {auditResult.ollama && auditResult.ollama.available && auditResult.ollama.llmRecommendations && (
+              <div style={{ marginBottom: '2rem' }}>
+                <h3 style={{ marginBottom: '1rem', color: '#7c3aed', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  🤖 AI Recommendations
+                  <span style={{ background: '#ede9fe', color: '#7c3aed', padding: '0.15rem 0.6rem', borderRadius: '12px', fontSize: '0.75rem', fontWeight: '600' }}>
+                    llama3.2
+                  </span>
+                </h3>
+                <div style={{ background: 'linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%)', border: '1px solid #d8b4fe', borderRadius: '10px', padding: '1.5rem' }}>
+                  {auditResult.ollama.llmRecommendations.split('\n').filter(line => line.trim()).map((line, i) => (
+                    <div key={i} style={{
+                      padding: '0.85rem 1rem',
+                      marginBottom: '0.6rem',
+                      borderRadius: '8px',
+                      background: 'white',
+                      borderLeft: '4px solid #7c3aed',
+                      fontSize: '0.95rem',
+                      lineHeight: '1.5',
+                      color: '#374151'
+                    }}>
+                      {line}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Detailed Elements */}
             <div style={{ marginTop: '2rem', padding: '1.5rem', background: '#f8f9fa', borderRadius: '10px' }}>
               <h3 style={{ marginBottom: '1rem' }}>Detailed Analysis</h3>
@@ -643,6 +695,41 @@ const SEOAudit = ({ authToken, API_BASE_URL }) => {
                 <div>
                   <strong>Twitter Card:</strong> {auditResult.elements.hasTwitterCard ? '✓ Yes' : '✗ No'}
                 </div>
+                {auditResult.elements.readabilityScore != null && (
+                  <div>
+                    <strong>Readability:</strong>{' '}
+                    <span style={{ color: auditResult.elements.readabilityScore >= 60 ? '#2ecc71' : auditResult.elements.readabilityScore >= 40 ? '#f39c12' : '#e74c3c' }}>
+                      {Math.round(auditResult.elements.readabilityScore)} / 100
+                    </span>
+                    <span style={{ fontSize: '0.8rem', color: '#888', marginLeft: '0.4rem' }}>
+                      (Flesch)
+                    </span>
+                  </div>
+                )}
+                <div>
+                  <strong>Viewport:</strong> {auditResult.elements.hasViewport ? '✓ Yes' : <span style={{ color: '#e74c3c' }}>✗ Missing</span>}
+                </div>
+                <div>
+                  <strong>Canonical:</strong>{' '}
+                  {auditResult.elements.canonicalUrl
+                    ? <span style={{ color: '#2ecc71' }}>✓ Set</span>
+                    : <span style={{ color: '#f39c12' }}>✗ Not set</span>}
+                </div>
+                <div>
+                  <strong>Structured Data:</strong> {auditResult.elements.hasStructuredData ? '✓ Yes' : '✗ No'}
+                </div>
+                <div>
+                  <strong>Lang Attribute:</strong> {auditResult.elements.langAttr
+                    ? <span style={{ color: '#2ecc71' }}>✓ {auditResult.elements.langAttr}</span>
+                    : <span style={{ color: '#f39c12' }}>✗ Missing</span>}
+                </div>
+                {auditResult.elements.isNoindex && (
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <span style={{ background: '#fee2e2', color: '#dc2626', padding: '0.3rem 0.8rem', borderRadius: '6px', fontWeight: '700', fontSize: '0.9rem' }}>
+                      ⛔ noindex detected — this page will not be indexed by search engines
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
               </>
