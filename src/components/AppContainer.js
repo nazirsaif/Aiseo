@@ -28,7 +28,7 @@ const AppContainer = ({ authToken, currentUser, onLogout, API_BASE_URL, onUserUp
           <SEOAudit authToken={authToken} API_BASE_URL={API_BASE_URL} />
         )}
         {currentPage === 'reports' && (
-          <Reports authToken={authToken} API_BASE_URL={API_BASE_URL} />
+          <Reports authToken={authToken} API_BASE_URL={API_BASE_URL} onNavigate={setCurrentPage} />
         )}
         {currentPage === 'settings' && (
           <Settings

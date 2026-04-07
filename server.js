@@ -399,6 +399,62 @@ app.get('/api/dashboard/keywords', auth, async (req, res) => {
   }
 });
 
+// Dashboard AI Suggestions
+app.get('/api/dashboard/suggestions', auth, async (req, res) => {
+  try {
+    const [analysisCount, audits, avgScoreAgg] = await Promise.all([
+      Analysis.countDocuments({ user: req.userId }),
+      SEOAudit.find({ user: req.userId }).select('score audit.issuesCount').lean(),
+      SEOAudit.aggregate([
+        { $match: { user: new mongoose.Types.ObjectId(req.userId) } },
+        { $group: { _id: null, avgScore: { $avg: '$score' } } }
+      ])
+    ]);
+
+    const overview = {
+      keywordClusters: analysisCount,
+      contentGaps: audits.reduce((sum, a) => sum + (a.audit?.issuesCount || 0), 0),
+      seoScore: avgScoreAgg.length ? Math.round(avgScoreAgg[0].avgScore) : 0
+    };
+
+    if (overview.seoScore === 0 && overview.contentGaps === 0) {
+      // Very basic static fallback if no data
+      return res.json({
+        available: false,
+        suggestions: [
+          { priority: "High", title: "Run your first SEO Audit", description: "Start by entering a URL in the SEO Audit tab." },
+          { priority: "Medium", title: "Analyze Keywords", description: "Use the keyword research tool to find missing opportunities." },
+          { priority: "Low", title: "Configure Settings", description: "Check your settings to establish baseline preferences." }
+        ]
+      });
+    }
+
+    const { ollamaService } = require('./services/ollamaService') ? { ollamaService: require('./services/ollamaService') } : {};
+    
+    let result = { available: false, suggestions: [] };
+    if (ollamaService && typeof ollamaService.generateDashboardSuggestions === 'function') {
+      result = await ollamaService.generateDashboardSuggestions(overview);
+    }
+    
+    // Fallback if LLM fails or is unavailable
+    if (!result.available || !result.suggestions || result.suggestions.length === 0) {
+      result = {
+        available: false,
+        suggestions: [
+          { priority: "High", title: "Optimize existing pages", description: `You have ${overview.contentGaps} issues. Start fixing them.` },
+          { priority: "Medium", title: "Expand keyword clusters", description: `You have ${overview.keywordClusters} analysis runs. Keep researching new topics.` },
+          { priority: "Low", title: "Improve overall score", description: `Your average SEO score is ${overview.seoScore}. Aim for 90+.` }
+        ]
+      };
+    }
+
+    res.json(result);
+  } catch (err) {
+    console.error('Dashboard AI Suggestions error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // SEO Audit Pipeline - Automated SEO analysis
 const seoAuditService = require('./services/seoAuditService');
 const keywordResearchService = require('./services/keywordResearchService');

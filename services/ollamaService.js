@@ -39,7 +39,7 @@ async function ollamaGenerate(prompt, maxTokens = 400) {
       stream: false,
       options: { temperature: 0.3, num_predict: maxTokens }
     },
-    { timeout: 60000 }
+    { timeout: 180000 }
   );
   return (res.data?.response || '').trim();
 }
@@ -170,10 +170,34 @@ Content gaps:`;
   }
 }
 
+/**
+ * Generate 3 dashboard-level AI suggestions based on user overview metrics.
+ * Returns { available: bool, suggestions: Array<{priority, title, description}> }
+ */
+async function generateDashboardSuggestions(overview) {
+  const prompt = `You are an SEO expert evaluating a website. The user's dashboard metrics are: SEO Score: ${overview.seoScore}/100, Content Gaps: ${overview.contentGaps}, Keyword Clusters: ${overview.keywordClusters}.
+Generate exactly 3 actionable SEO suggestions based on these metrics. Assign one High priority, one Medium priority, and one Low priority.
+Reply ONLY with a valid JSON array of objects. No introductory text, no markdown code blocks.
+Format exactly like this:
+[{"priority":"High","title":"Optimize meta tags","description":"Fix missing tags to improve CTR."},{"priority":"Medium","title":"...","description":"..."},{"priority":"Low","title":"...","description":"..."}]`;
+
+  try {
+    const text = await ollamaGenerate(prompt, 400);
+    const match = text.match(/\[[\s\S]*\]/);
+    if (!match) return { available: true, suggestions: [] };
+    const suggestions = JSON.parse(match[0]);
+    return { available: true, suggestions };
+  } catch (err) {
+    console.warn('[Ollama] generateDashboardSuggestions failed:', err.message);
+    return { available: false, suggestions: [] };
+  }
+}
+
 module.exports = {
   isOllamaAvailable,
   generateSEORecommendations,
   generateGradeJustification,
   classifyKeywordIntents,
-  generateCompetitorGapAnalysis
+  generateCompetitorGapAnalysis,
+  generateDashboardSuggestions
 };

@@ -15,6 +15,8 @@ const Dashboard = ({ authToken, API_BASE_URL }) => {
     minRelevance: 0,
     minVolume: 0
   });
+  const [aiSuggestions, setAiSuggestions] = useState(null);
+  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
 
   useEffect(() => {
     if (!authToken) return;
@@ -50,6 +52,29 @@ const Dashboard = ({ authToken, API_BASE_URL }) => {
 
     loadDashboardData();
   }, [authToken, API_BASE_URL]);
+
+  useEffect(() => {
+    if (activeTab === 'suggestions' && !aiSuggestions && authToken) {
+      const fetchSuggestions = async () => {
+        setIsLoadingSuggestions(true);
+        try {
+          const res = await fetch(`${API_BASE_URL}/api/dashboard/suggestions`, {
+            headers: { Authorization: `Bearer ${authToken}` }
+          });
+          const data = await res.json();
+          if (res.ok) {
+            setAiSuggestions(data.suggestions || []);
+          }
+        } catch (err) {
+          console.error('Failed to load AI suggestions', err);
+          setAiSuggestions([]);
+        } finally {
+          setIsLoadingSuggestions(false);
+        }
+      };
+      fetchSuggestions();
+    }
+  }, [activeTab, aiSuggestions, authToken, API_BASE_URL]);
 
   const runKeywordResearch = async (baseKeyword) => {
     if (!authToken) return;
@@ -403,31 +428,35 @@ const Dashboard = ({ authToken, API_BASE_URL }) => {
         {/* AI Suggestions Tab */}
         {activeTab === 'suggestions' && (
           <div className="tab-content active">
-            <h3>AI-Powered Recommendations</h3>
+            <h3>🤖 AI-Powered Recommendations</h3>
             <div style={{ marginTop: '2rem' }}>
-              <div style={{ background: '#e8f5e9', padding: '1.5rem', borderRadius: '10px', marginBottom: '1rem', borderLeft: '4px solid #4caf50' }}>
-                <h4 style={{ color: '#2e7d32', marginBottom: '1rem' }}>
-                  <i className="fas fa-check-circle"></i> High Priority
-                </h4>
-                <p style={{ color: '#333', marginBottom: '0.5rem' }}><strong>Optimize meta descriptions</strong></p>
-                <p style={{ color: '#666' }}>12 pages have missing or duplicate meta descriptions. This could improve CTR by 15-20%</p>
-              </div>
+              {isLoadingSuggestions ? (
+                <div style={{ padding: '2rem', textAlign: 'center' }}>
+                  <div className="spinner" style={{ width: '30px', height: '30px', margin: '0 auto' }}></div>
+                  <p style={{ marginTop: '1rem', color: '#666' }}>Ollama is analyzing your metrics to generate suggestions...</p>
+                </div>
+              ) : aiSuggestions && aiSuggestions.length > 0 ? (
+                aiSuggestions.map((sug, index) => {
+                  let bg = '#e3f2fd', border = '#2196f3', iconColor = '#1565c0', iconClass = 'fa-info-circle', titleColor = '#1565c0';
+                  if (sug.priority === 'High') {
+                    bg = '#e8f5e9'; border = '#4caf50'; iconColor = '#2e7d32'; iconClass = 'fa-check-circle'; titleColor = '#2e7d32';
+                  } else if (sug.priority === 'Medium') {
+                    bg = '#fff3e0'; border = '#ff9800'; iconColor = '#e65100'; iconClass = 'fa-exclamation-circle'; titleColor = '#e65100';
+                  }
 
-              <div style={{ background: '#fff3e0', padding: '1.5rem', borderRadius: '10px', marginBottom: '1rem', borderLeft: '4px solid #ff9800' }}>
-                <h4 style={{ color: '#e65100', marginBottom: '1rem' }}>
-                  <i className="fas fa-exclamation-circle"></i> Medium Priority
-                </h4>
-                <p style={{ color: '#333', marginBottom: '0.5rem' }}><strong>Improve internal linking</strong></p>
-                <p style={{ color: '#666' }}>Your cornerstone content has low internal link count. Add 5-8 strategic internal links</p>
-              </div>
-
-              <div style={{ background: '#e3f2fd', padding: '1.5rem', borderRadius: '10px', borderLeft: '4px solid #2196f3' }}>
-                <h4 style={{ color: '#1565c0', marginBottom: '1rem' }}>
-                  <i className="fas fa-info-circle"></i> Opportunity
-                </h4>
-                <p style={{ color: '#333', marginBottom: '0.5rem' }}><strong>Target long-tail keywords</strong></p>
-                <p style={{ color: '#666' }}>Found 23 low-competition long-tail opportunities with combined potential of 5,000 monthly visits</p>
-              </div>
+                  return (
+                    <div key={index} style={{ background: bg, padding: '1.5rem', borderRadius: '10px', marginBottom: '1rem', borderLeft: `4px solid ${border}` }}>
+                      <h4 style={{ color: titleColor, marginBottom: '1rem' }}>
+                        <i className={`fas ${iconClass}`}></i> {sug.priority} Priority
+                      </h4>
+                      <p style={{ color: '#333', marginBottom: '0.5rem' }}><strong>{sug.title}</strong></p>
+                      <p style={{ color: '#666' }}>{sug.description}</p>
+                    </div>
+                  );
+                })
+              ) : (
+                <p style={{ color: '#666' }}>No AI suggestions available at this time. Run an audit first!</p>
+              )}
             </div>
           </div>
         )}

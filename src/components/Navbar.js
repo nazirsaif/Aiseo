@@ -13,7 +13,7 @@ const Navbar = ({ currentUser, currentPage, onNavigate, onLogout, onToggleNotifi
             onClick={() => onNavigate('dashboard')}
             className={currentPage === 'dashboard' ? 'active' : ''}
           >
-            Dashboard
+            <i className="fas fa-chart-line"></i> Dashboard
           </a>
         </li>
         <li>
@@ -29,7 +29,7 @@ const Navbar = ({ currentUser, currentPage, onNavigate, onLogout, onToggleNotifi
             onClick={() => onNavigate('reports')}
             className={currentPage === 'reports' ? 'active' : ''}
           >
-            Reports
+            <i className="fas fa-file-alt"></i> Reports
           </a>
         </li>
         <li>
@@ -37,7 +37,7 @@ const Navbar = ({ currentUser, currentPage, onNavigate, onLogout, onToggleNotifi
             onClick={() => onNavigate('settings')}
             className={currentPage === 'settings' ? 'active' : ''}
           >
-            Settings
+            <i className="fas fa-cog"></i> Settings
           </a>
         </li>
       </ul>
