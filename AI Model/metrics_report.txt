@@ -1,0 +1,21 @@
+--- TEST DATASET EVALUATION REPORT ---
+                         precision    recall  f1-score   support
+
+      issue_low_content       0.96      0.99      0.98      8473
+     issue_missing_meta       1.00      1.00      1.00     29930
+      issue_missing_alt       1.00      1.00      1.00     40205
+issue_no_internal_links       1.00      0.77      0.87      1953
+issue_no_external_links       1.00      1.00      1.00      5037
+     issue_poor_density       0.99      1.00      0.99     48973
+ issue_high_bounce_rate       1.00      1.00      1.00     26611
+         issue_low_time       0.94      1.00      0.97      8388
+       issue_low_scroll       1.00      1.00      1.00     33216
+    issue_low_authority       1.00      0.98      0.99     19286
+            issue_no_h1       1.00      1.00      1.00     74849
+    issue_bad_font_size       1.00      1.00      1.00     14984
+       issue_is_noindex       1.00      1.00      1.00     10066
+
+              micro avg       1.00      1.00      1.00    321971
+              macro avg       0.99      0.98      0.98    321971
+           weighted avg       1.00      1.00      1.00    321971
+            samples avg       0.98      0.98      0.98    321971
