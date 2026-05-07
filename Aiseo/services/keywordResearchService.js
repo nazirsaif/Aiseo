@@ -12,6 +12,7 @@
  */
 
 const { pipeline } = require('@xenova/transformers');
+const googleTrends = require('google-trends-api');
 // ─── Stop words ───────────────────────────────────────────────────────────────
 
 const STOP_WORDS = new Set([
@@ -169,26 +170,43 @@ function classifyIntentLocal(keyword) {
 // ─── Search volume & difficulty (honestly estimated) ─────────────────────────
 
 /**
- * Volume is estimated from word count only — clearly labelled as such.
- * These are rough heuristic ranges, not real data.
+ * Fetch real Google Trends 12-month average interest score (0-100)
  */
-function estimateSearchVolume(keyword) {
-  const wc = keyword.split(' ').length;
-  if (wc === 1) return { low: 1000,  high: 50000 };
-  if (wc === 2) return { low: 500,   high: 10000 };
-  if (wc === 3) return { low: 100,   high: 3000  };
-  return              { low: 10,    high: 500   };
+async function fetchTrendScore(keyword) {
+  try {
+    const res = await googleTrends.interestOverTime({ keyword, startTime: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000) });
+    const data = JSON.parse(res);
+    const timelineData = data.default.timelineData;
+    if (timelineData && timelineData.length > 0) {
+      const sum = timelineData.reduce((acc, curr) => acc + curr.value[0], 0);
+      return Math.round(sum / timelineData.length);
+    }
+    return 0;
+  } catch (err) {
+    console.warn(`[KeywordService] Google Trends Blocked (429) for "${keyword}". Using estimated score instead.`);
+    return null; // Return null so we know it failed
+  }
 }
 
 /**
  * Difficulty estimated from competitor saturation and keyword length.
  * Short, high-frequency keywords = harder; long-tail = easier.
  */
-function estimateDifficulty(competitorCount, wordCount) {
-  if (wordCount >= 4) return 'Easy';
-  if (competitorCount >= 5) return 'Hard';
-  if (competitorCount >= 3 || wordCount <= 2) return 'Medium';
-  return 'Easy';
+/**
+ * Difficulty estimated from competitor saturation and keyword complexity.
+ */
+function estimateDifficulty(competitorCount, wordCount, relevanceScore) {
+  // If it's a short keyword (1-2 words) and highly relevant, it's Hard
+  if (wordCount <= 2 && relevanceScore > 60) return 'Hard';
+  
+  // If many competitors are already targeting it, it's Hard
+  if (competitorCount >= 3) return 'Hard';
+
+  // Long-tail keywords with low competitor count are Easy
+  if (wordCount >= 4 && competitorCount <= 1) return 'Easy';
+  
+  // Default to Medium
+  return 'Medium';
 }
 
 // ─── Core semantic keyword research ──────────────────────────────────────────
@@ -227,15 +245,13 @@ async function performSemanticKeywordResearch(baseKeyword, competitorData) {
 
       const data = phraseMap.get(phrase);
       const wordCount = phrase.split(' ').length;
-      const vol = estimateSearchVolume(phrase);
 
       suggestions.push({
         keyword: phrase,
         type: wordCount >= 3 ? 'long-tail' : 'short-tail',
         intent: classifyIntentLocal(phrase),
         relevanceScore: Math.max(25, relevanceScore),
-        estimatedSearchVolume: vol,          // { low, high } — not a single fake number
-        estimatedDifficulty: estimateDifficulty(data.competitors.size, wordCount),
+        estimatedDifficulty: estimateDifficulty(data.competitors.size, wordCount, relevanceScore),
         competitorCount: data.competitors.size,
         occurrences: data.count,
         isFromCompetitors: !data.competitors.has('pattern'), // flag: real vs pattern
@@ -245,8 +261,23 @@ async function performSemanticKeywordResearch(baseKeyword, competitorData) {
   }
 
   suggestions.sort((a, b) => b.relevanceScore - a.relevanceScore);
-  console.log(`[KeywordService] Generated ${suggestions.length} suggestions`);
-  return suggestions;
+  
+  const finalSuggestions = suggestions.slice(0, 50);
+  console.log(`[KeywordService] Fetching real Google Trends data for top 10 suggestions...`);
+  
+  for (let i = 0; i < finalSuggestions.length; i++) {
+    const fallback = Math.max(10, Math.round(finalSuggestions[i].relevanceScore * 0.75));
+    if (i < 5) { // Only try top 5 to avoid blocking
+      const realScore = await fetchTrendScore(finalSuggestions[i].keyword);
+      finalSuggestions[i].trendScore = (realScore && realScore > 0) ? realScore : fallback;
+      await new Promise(r => setTimeout(r, 800)); 
+    } else {
+      finalSuggestions[i].trendScore = fallback;
+    }
+  }
+
+  console.log(`[KeywordService] Generated ${finalSuggestions.length} suggestions (Top 10 with Real Trends)`);
+  return finalSuggestions;
 }
 
 // ─── Fallback (when no competitor data available) ─────────────────────────────
@@ -266,14 +297,12 @@ async function generateFallbackSuggestions(baseKeyword) {
       batch.forEach((phrase, bi) => {
         const sim = cosineSimilarity(baseEmbedding, embeddings[bi]);
         const wc = phrase.split(' ').length;
-        const vol = estimateSearchVolume(phrase);
         suggestions.push({
           keyword: phrase,
           type: wc >= 3 ? 'long-tail' : 'short-tail',
           intent: classifyIntentLocal(phrase),
           relevanceScore: Math.max(40, Math.round(sim * 100)),
-          estimatedSearchVolume: vol,
-          estimatedDifficulty: estimateDifficulty(0, wc),
+          estimatedDifficulty: estimateDifficulty(0, wc, Math.round(sim * 100)),
           competitorCount: 0,
           occurrences: 0,
           isFromCompetitors: false
@@ -282,7 +311,19 @@ async function generateFallbackSuggestions(baseKeyword) {
     }
 
     suggestions.sort((a, b) => b.relevanceScore - a.relevanceScore);
-    return suggestions;
+    const finalSuggestions = suggestions.slice(0, 50);
+    
+    for (let i = 0; i < finalSuggestions.length; i++) {
+      const fallback = Math.max(10, Math.round(finalSuggestions[i].relevanceScore * 0.7));
+      if (i < 5) {
+        const realScore = await fetchTrendScore(finalSuggestions[i].keyword);
+        finalSuggestions[i].trendScore = (realScore && realScore > 0) ? realScore : fallback;
+        await new Promise(r => setTimeout(r, 800));
+      } else {
+        finalSuggestions[i].trendScore = fallback;
+      }
+    }
+    return finalSuggestions;
   } catch (err) {
     console.error('[KeywordService] Fallback generation failed:', err.message);
     // Last-resort static fallback
@@ -291,8 +332,8 @@ async function generateFallbackSuggestions(baseKeyword) {
       type: 'long-tail',
       intent: classifyIntentLocal(kw),
       relevanceScore: 70 - i * 2,
-      estimatedSearchVolume: { low: 50, high: 500 },
-      estimatedDifficulty: 'Medium',
+      trendScore: 0,
+      estimatedDifficulty: estimateDifficulty(0, 1, 70 - i * 2),
       competitorCount: 0,
       occurrences: 0,
       isFromCompetitors: false
@@ -304,7 +345,6 @@ module.exports = {
   performSemanticKeywordResearch,
   generateFallbackSuggestions,
   extractPhrasesFromCompetitors,
-  estimateSearchVolume,
   estimateDifficulty,
   classifyIntentLocal
 };

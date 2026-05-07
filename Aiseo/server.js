@@ -1017,9 +1017,7 @@ app.post('/api/keywords/research', auth, keywordLimiter, async (req, res) => {
           return false;
         }
         if (minVolume !== undefined) {
-          // estimatedSearchVolume is { low, high }. Filter if high value is less than minVolume.
-          const currentVol = (s.estimatedSearchVolume && s.estimatedSearchVolume.high) || 0;
-          if (currentVol < minVolume) return false;
+          if (s.trendScore < minVolume) return false;
         }
         if (difficulty && difficulty !== 'all' && s.estimatedDifficulty !== difficulty) {
           return false;

@@ -4,9 +4,8 @@ import notification from '../utils/notification';
 const Dashboard = ({ authToken, API_BASE_URL }) => {
   const [keywordInput, setKeywordInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('keyword');
+  const [activeTab, setActiveTab] = useState('competitor');
   const [overview, setOverview] = useState(null);
-  const [keywords, setKeywords] = useState([]);
   const [isLoadingDashboard, setIsLoadingDashboard] = useState(false);
   const [researchResult, setResearchResult] = useState(null);
   const [isResearchLoading, setIsResearchLoading] = useState(false);
@@ -15,8 +14,6 @@ const Dashboard = ({ authToken, API_BASE_URL }) => {
     minRelevance: 0,
     minVolume: 0
   });
-  const [aiSuggestions, setAiSuggestions] = useState(null);
-  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
 
   useEffect(() => {
     if (!authToken) return;
@@ -25,23 +22,14 @@ const Dashboard = ({ authToken, API_BASE_URL }) => {
       try {
         setIsLoadingDashboard(true);
 
-        const [overviewRes, keywordsRes] = await Promise.all([
-          fetch(`${API_BASE_URL}/api/dashboard/overview`, {
-            headers: { Authorization: `Bearer ${authToken}` }
-          }),
-          fetch(`${API_BASE_URL}/api/dashboard/keywords`, {
-            headers: { Authorization: `Bearer ${authToken}` }
-          })
-        ]);
+        const overviewRes = await fetch(`${API_BASE_URL}/api/dashboard/overview`, {
+          headers: { Authorization: `Bearer ${authToken}` }
+        });
 
         const overviewData = await overviewRes.json();
-        const keywordsData = await keywordsRes.json();
 
         if (overviewRes.ok) {
           setOverview(overviewData);
-        }
-        if (keywordsRes.ok && Array.isArray(keywordsData.keywords)) {
-          setKeywords(keywordsData.keywords);
         }
       } catch (err) {
         console.error('Failed to load dashboard data', err);
@@ -52,29 +40,6 @@ const Dashboard = ({ authToken, API_BASE_URL }) => {
 
     loadDashboardData();
   }, [authToken, API_BASE_URL]);
-
-  useEffect(() => {
-    if (activeTab === 'suggestions' && !aiSuggestions && authToken) {
-      const fetchSuggestions = async () => {
-        setIsLoadingSuggestions(true);
-        try {
-          const res = await fetch(`${API_BASE_URL}/api/dashboard/suggestions`, {
-            headers: { Authorization: `Bearer ${authToken}` }
-          });
-          const data = await res.json();
-          if (res.ok) {
-            setAiSuggestions(data.suggestions || []);
-          }
-        } catch (err) {
-          console.error('Failed to load AI suggestions', err);
-          setAiSuggestions([]);
-        } finally {
-          setIsLoadingSuggestions(false);
-        }
-      };
-      fetchSuggestions();
-    }
-  }, [activeTab, aiSuggestions, authToken, API_BASE_URL]);
 
   const runKeywordResearch = async (baseKeyword) => {
     if (!authToken) return;
@@ -266,22 +231,16 @@ const Dashboard = ({ authToken, API_BASE_URL }) => {
       <div className="results-section">
         <div className="tabs">
           <div
-            className={`tab ${activeTab === 'keyword' ? 'active' : ''}`}
-            onClick={() => setActiveTab('keyword')}
+            className={`tab ${activeTab === 'competitor' ? 'active' : ''}`}
+            onClick={() => setActiveTab('competitor')}
           >
-            <i className="fas fa-key"></i> Keyword Analysis
+            <i className="fas fa-chess-knight"></i> Competitor Analysis
           </div>
           <div
             className={`tab ${activeTab === 'content' ? 'active' : ''}`}
             onClick={() => setActiveTab('content')}
           >
             <i className="fas fa-file-alt"></i> Content Gaps
-          </div>
-          <div
-            className={`tab ${activeTab === 'suggestions' ? 'active' : ''}`}
-            onClick={() => setActiveTab('suggestions')}
-          >
-            <i className="fas fa-lightbulb"></i> AI Suggestions
           </div>
           <div
             className={`tab ${activeTab === 'keyword-research' ? 'active' : ''}`}
@@ -291,171 +250,139 @@ const Dashboard = ({ authToken, API_BASE_URL }) => {
           </div>
         </div>
 
-        {/* Keyword Analysis Tab */}
-        {activeTab === 'keyword' && (
+        {/* Competitor Analysis Tab */}
+        {activeTab === 'competitor' && (
           <div className="tab-content active">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <h3>Top Performing Keywords</h3>
+              <h3>Competitor Ranking Comparison</h3>
               <button className="btn btn-secondary" onClick={downloadReport}>
                 <i className="fas fa-download"></i>
-                Download Report
+                Export Data
               </button>
             </div>
+            <p style={{ color: '#666', marginBottom: '1.5rem' }}>
+              Compare your website's performance against your top competitors. See where you rank higher and identify areas for improvement.
+            </p>
             
             <table className="keyword-table">
               <thead>
                 <tr>
-                  <th>Keyword</th>
-                  <th>Search Volume</th>
-                  <th>Difficulty</th>
-                  <th>Performance</th>
-                  <th>Opportunity</th>
+                  <th>Website (URL)</th>
+                  <th>Title</th>
+                  <th>Word Count</th>
+                  <th>Keyword Density</th>
+                  <th>SEO Score (Grade)</th>
                 </tr>
               </thead>
               <tbody>
-                {keywords.length > 0 ? (
-                  keywords.map((row) => (
-                    <tr key={row.id}>
-                      <td>{row.keyword}</td>
-                      <td>{row.searchVolume.toLocaleString()}</td>
-                      <td>{row.difficulty}</td>
+                {researchResult && researchResult.competitors && researchResult.competitors.length > 0 ? (
+                  researchResult.competitors.map((c, idx) => (
+                    <tr key={c.url || idx}>
+                      <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={c.url}>
+                        {c.url}
+                      </td>
+                      <td>{c.title || 'N/A'}</td>
+                      <td>{c.wordCount || '-'}</td>
+                      <td>{c.keywordDensity ? `${c.keywordDensity}%` : '-'}</td>
                       <td>
-                        <span
-                          className={`performance-badge ${
-                            row.performance === 'Strong'
-                              ? 'badge-strong'
-                              : row.performance === 'Medium'
-                              ? 'badge-medium'
-                              : 'badge-weak'
-                          }`}
-                        >
-                          {row.performance}
+                        <span className={`performance-badge ${c.score >= 75 ? 'badge-strong' : c.score >= 50 ? 'badge-medium' : 'badge-weak'}`}>
+                          {c.score ? `${c.score} (${c.grade || '-'})` : 'N/A'}
                         </span>
                       </td>
-                      <td>{row.opportunity}</td>
                     </tr>
                   ))
                 ) : (
-                  <>
-                    <tr>
-                      <td>digital marketing strategy</td>
-                      <td>12,400</td>
-                      <td>Medium</td>
-                      <td><span className="performance-badge badge-strong">Strong</span></td>
-                      <td>High</td>
-                    </tr>
-                    <tr>
-                      <td>SEO optimization tips</td>
-                      <td>8,900</td>
-                      <td>Low</td>
-                      <td><span className="performance-badge badge-strong">Strong</span></td>
-                      <td>Medium</td>
-                    </tr>
-                    <tr>
-                      <td>content marketing tools</td>
-                      <td>6,700</td>
-                      <td>High</td>
-                      <td><span className="performance-badge badge-medium">Medium</span></td>
-                      <td>High</td>
-                    </tr>
-                    <tr>
-                      <td>social media analytics</td>
-                      <td>5,200</td>
-                      <td>Medium</td>
-                      <td><span className="performance-badge badge-weak">Weak</span></td>
-                      <td>Very High</td>
-                    </tr>
-                    <tr>
-                      <td>email marketing campaign</td>
-                      <td>4,800</td>
-                      <td>Low</td>
-                      <td><span className="performance-badge badge-medium">Medium</span></td>
-                      <td>Medium</td>
-                    </tr>
-                  </>
+                  <tr>
+                    <td colSpan="5" style={{ textAlign: 'center', padding: '2rem', color: '#666' }}>
+                      {isResearchLoading 
+                        ? 'Analyzing competitors... please wait.' 
+                        : 'No competitor data available. Please run an analysis above.'}
+                    </td>
+                  </tr>
                 )}
               </tbody>
             </table>
 
-            <div className="chart-container">
-              <h4>Keyword Performance Trend</h4>
-              <p style={{ color: '#666', marginTop: '1rem' }}>Chart visualization would be integrated here using Chart.js or Recharts</p>
-            </div>
+            {researchResult && researchResult.competitors && researchResult.competitors.length > 0 && (
+              <div className="chart-container" style={{ marginTop: '2rem' }}>
+                <h4>Competitor Scores Overview</h4>
+                <p style={{ color: '#666', marginTop: '1rem' }}>Visual distribution of competitor SEO scores based on our AI analysis.</p>
+                <div style={{ display: 'flex', height: '30px', borderRadius: '15px', overflow: 'hidden', marginTop: '1rem', background: '#f0f0f0' }}>
+                  {researchResult.competitors.map((c, idx) => {
+                    const colors = ['#f44336', '#ff9800', '#4caf50', '#2196f3', '#9c27b0'];
+                    const color = colors[idx % colors.length];
+                    const widthPercent = 100 / researchResult.competitors.length;
+                    return (
+                      <div key={idx} style={{ width: `${widthPercent}%`, background: color, title: `${c.url} (${c.score})` }}></div>
+                    );
+                  })}
+                </div>
+                <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem', fontSize: '0.85rem', color: '#666', flexWrap: 'wrap' }}>
+                  {researchResult.competitors.map((c, idx) => {
+                    const colors = ['#f44336', '#ff9800', '#4caf50', '#2196f3', '#9c27b0'];
+                    const color = colors[idx % colors.length];
+                    return (
+                      <span key={idx}><span style={{ color }}>■</span> {new URL(c.url).hostname}</span>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
         {/* Content Gaps Tab */}
         {activeTab === 'content' && (
           <div className="tab-content active">
-            <h3>Identified Content Gaps</h3>
+            <h3>Content Gaps Analysis</h3>
+            <p style={{ color: '#666', marginBottom: '1.5rem' }}>
+              Discover keywords and topics that your competitors are actively ranking for, but your website is missing. 
+              Creating content around these topics can help capture untapped traffic.
+            </p>
             <div style={{ marginTop: '2rem' }}>
-              <div className="card" style={{ marginBottom: '1rem' }}>
-                <h4 style={{ color: '#667eea', marginBottom: '0.5rem' }}>
-                  <i className="fas fa-circle" style={{ fontSize: '0.5rem', marginRight: '0.5rem' }}></i>
-                  Missing Topic: "AI in Digital Marketing"
-                </h4>
-                <p style={{ color: '#666', marginBottom: '1rem' }}>Your competitors are ranking for this high-volume topic. Potential traffic: 15,000/month</p>
-                <button className="btn btn-secondary" style={{ padding: '0.5rem 1rem' }}>
-                  <i className="fas fa-plus"></i> Create Content Brief
-                </button>
-              </div>
-
-              <div className="card" style={{ marginBottom: '1rem' }}>
-                <h4 style={{ color: '#667eea', marginBottom: '0.5rem' }}>
-                  <i className="fas fa-circle" style={{ fontSize: '0.5rem', marginRight: '0.5rem' }}></i>
-                  Outdated Content: "SEO Best Practices 2023"
-                </h4>
-                <p style={{ color: '#666', marginBottom: '1rem' }}>This article needs updating with current trends. Last modified: 18 months ago</p>
-                <button className="btn btn-secondary" style={{ padding: '0.5rem 1rem' }}>
-                  <i className="fas fa-edit"></i> Update Content
-                </button>
-              </div>
-
-              <div className="card">
-                <h4 style={{ color: '#667eea', marginBottom: '0.5rem' }}>
-                  <i className="fas fa-circle" style={{ fontSize: '0.5rem', marginRight: '0.5rem' }}></i>
-                  Low Keyword Coverage: "Mobile SEO"
-                </h4>
-                <p style={{ color: '#666', marginBottom: '1rem' }}>Only 3 related keywords covered. Competitors average 12 keywords per topic</p>
-                <button className="btn btn-secondary" style={{ padding: '0.5rem 1rem' }}>
-                  <i className="fas fa-expand"></i> Expand Coverage
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* AI Suggestions Tab */}
-        {activeTab === 'suggestions' && (
-          <div className="tab-content active">
-            <h3>🤖 AI-Powered Recommendations</h3>
-            <div style={{ marginTop: '2rem' }}>
-              {isLoadingSuggestions ? (
-                <div style={{ padding: '2rem', textAlign: 'center' }}>
-                  <div className="spinner" style={{ width: '30px', height: '30px', margin: '0 auto' }}></div>
-                  <p style={{ marginTop: '1rem', color: '#666' }}>Ollama is analyzing your metrics to generate suggestions...</p>
-                </div>
-              ) : aiSuggestions && aiSuggestions.length > 0 ? (
-                aiSuggestions.map((sug, index) => {
-                  let bg = '#e3f2fd', border = '#2196f3', iconColor = '#1565c0', iconClass = 'fa-info-circle', titleColor = '#1565c0';
-                  if (sug.priority === 'High') {
-                    bg = '#e8f5e9'; border = '#4caf50'; iconColor = '#2e7d32'; iconClass = 'fa-check-circle'; titleColor = '#2e7d32';
-                  } else if (sug.priority === 'Medium') {
-                    bg = '#fff3e0'; border = '#ff9800'; iconColor = '#e65100'; iconClass = 'fa-exclamation-circle'; titleColor = '#e65100';
-                  }
-
-                  return (
-                    <div key={index} style={{ background: bg, padding: '1.5rem', borderRadius: '10px', marginBottom: '1rem', borderLeft: `4px solid ${border}` }}>
-                      <h4 style={{ color: titleColor, marginBottom: '1rem' }}>
-                        <i className={`fas ${iconClass}`}></i> {sug.priority} Priority
-                      </h4>
-                      <p style={{ color: '#333', marginBottom: '0.5rem' }}><strong>{sug.title}</strong></p>
-                      <p style={{ color: '#666' }}>{sug.description}</p>
-                    </div>
-                  );
-                })
+              {isResearchLoading && (
+                <p style={{ textAlign: 'center', color: '#666', padding: '2rem' }}>
+                  <i className="fas fa-spinner fa-spin"></i> Identifying content gaps from semantic analysis...
+                </p>
+              )}
+              {!isResearchLoading && researchResult && researchResult.suggestions && researchResult.suggestions.length > 0 ? (
+                // Filter suggestions that have good search volume but aren't heavily targeted
+                researchResult.suggestions
+                  .slice(0, 5) // Show top 5 semantic gaps
+                  .map((gap, index) => {
+                    const colors = ['#667eea', '#ff9800', '#4caf50', '#e91e63', '#00bcd4'];
+                    const color = colors[index % colors.length];
+                    return (
+                      <div className="card" key={index} style={{ marginBottom: '1rem', borderLeft: `4px solid ${color}` }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div>
+                            <h4 style={{ color: '#333', marginBottom: '0.5rem' }}>
+                              Topic Gap: "{gap.keyword}"
+                            </h4>
+                            <p style={{ color: '#666', marginBottom: '1rem' }}>
+                              <strong>Semantic Relevance:</strong> {gap.relevanceScore || 'High'} <br />
+                              Google Trend Score: <span style={{ color: '#4caf50', fontWeight: 'bold' }}>
+                                {gap.trendScore || 0}/100
+                              </span>
+                            </p>
+                            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+                              <span style={{ background: '#e0e0e0', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.8rem' }}>Difficulty: {gap.estimatedDifficulty}</span>
+                              <span style={{ background: '#e0e0e0', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.8rem' }}>Competitors Target: {gap.competitorCount}</span>
+                            </div>
+                          </div>
+                          <button className="btn btn-primary" style={{ padding: '0.5rem 1rem' }}>
+                            <i className="fas fa-magic"></i> Generate Article
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
               ) : (
-                <p style={{ color: '#666' }}>No AI suggestions available at this time. Run an audit first!</p>
+                !isResearchLoading && (
+                  <p style={{ color: '#666', textAlign: 'center', padding: '2rem' }}>
+                    No content gaps identified yet. Run a keyword analysis to generate semantic gap insights.
+                  </p>
+                )
               )}
             </div>
           </div>
@@ -471,129 +398,155 @@ const Dashboard = ({ authToken, API_BASE_URL }) => {
               </p>
             )}
             {!isResearchLoading && researchResult && (
-              <>
-                <div style={{ marginTop: '1.5rem', marginBottom: '1rem' }}>
-                  <h4 style={{ marginBottom: '0.5rem' }}>Filters</h4>
-                  <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '0.25rem' }}>Difficulty</label>
+               <>
+                <div style={{ 
+                  background: 'rgba(255, 255, 255, 0.7)', 
+                  backdropFilter: 'blur(10px)',
+                  padding: '1.5rem', 
+                  borderRadius: '12px', 
+                  border: '1px solid rgba(0, 0, 0, 0.05)',
+                  marginTop: '1.5rem', 
+                  marginBottom: '2rem',
+                  boxShadow: '0 4px 15px rgba(0,0,0,0.03)'
+                }}>
+                  <h4 style={{ marginBottom: '1rem', color: '#333', fontSize: '1.1rem' }}>Filter Research Results</h4>
+                  <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                    <div style={{ flex: '1', minWidth: '150px' }}>
+                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', color: '#777', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Difficulty</label>
                       <select
+                        style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', border: '1px solid #ddd', background: '#fff', fontSize: '0.9rem' }}
                         value={keywordFilters.difficulty}
-                        onChange={(e) =>
-                          setKeywordFilters({ ...keywordFilters, difficulty: e.target.value })
-                        }
+                        onChange={(e) => setKeywordFilters({ ...keywordFilters, difficulty: e.target.value })}
                       >
-                        <option value="all">All</option>
+                        <option value="all">All Difficulties</option>
                         <option value="Easy">Easy</option>
                         <option value="Medium">Medium</option>
                         <option value="Hard">Hard</option>
                       </select>
                     </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '0.25rem' }}>
-                        Min Relevance
-                      </label>
+                    <div style={{ flex: '1', minWidth: '150px' }}>
+                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', color: '#777', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Min Relevance (%)</label>
                       <input
                         type="number"
                         min="0"
                         max="100"
                         value={keywordFilters.minRelevance}
-                        onChange={(e) =>
-                          setKeywordFilters({
-                            ...keywordFilters,
-                            minRelevance: Number(e.target.value) || 0
-                          })
-                        }
-                        style={{ width: '80px' }}
+                        onChange={(e) => setKeywordFilters({ ...keywordFilters, minRelevance: Number(e.target.value) || 0 })}
+                        style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', border: '1px solid #ddd', fontSize: '0.9rem' }}
                       />
                     </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '0.25rem' }}>
-                        Min Volume
-                      </label>
+                    <div style={{ flex: '1', minWidth: '150px' }}>
+                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', color: '#777', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Min Trend Score</label>
                       <input
                         type="number"
                         min="0"
+                        max="100"
                         value={keywordFilters.minVolume}
-                        onChange={(e) =>
-                          setKeywordFilters({
-                            ...keywordFilters,
-                            minVolume: Number(e.target.value) || 0
-                          })
-                        }
-                        style={{ width: '100px' }}
+                        onChange={(e) => setKeywordFilters({ ...keywordFilters, minVolume: Number(e.target.value) || 0 })}
+                        style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', border: '1px solid #ddd', fontSize: '0.9rem' }}
                       />
                     </div>
                   </div>
                 </div>
 
-                <h4>Suggested Long-tail Keywords</h4>
-                {researchResult.suggestions && researchResult.suggestions.length > 0 ? (
-                  <table className="keyword-table">
-                    <thead>
-                      <tr>
-                        <th>Keyword</th>
-                        <th>Relevance</th>
-                        <th>Est. Volume</th>
-                        <th>Difficulty</th>
-                        <th>Competitors</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {researchResult.suggestions
-                        .filter((s) => {
-                          if (keywordFilters.difficulty !== 'all' && s.estimatedDifficulty !== keywordFilters.difficulty) {
-                            return false;
-                          }
-                          if (s.relevanceScore < keywordFilters.minRelevance) return false;
-                          if (s.estimatedSearchVolume < keywordFilters.minVolume) return false;
-                          return true;
-                        })
-                        .map((s) => (
-                          <tr key={s.keyword}>
-                            <td>{s.keyword}</td>
-                            <td>{s.relevanceScore}</td>
-                            <td>{s.estimatedSearchVolume}</td>
-                            <td>{s.estimatedDifficulty}</td>
-                            <td>{s.competitorCount}</td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
-                ) : (
-                  <p style={{ color: '#666', marginTop: '1rem' }}>No keyword suggestions generated yet.</p>
-                )}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '1.5rem' }}>
+                  <div>
+                    <h4 style={{ marginBottom: '0.5rem', color: '#1a1a1a' }}>Suggested Long-tail Keywords</h4>
+                    <p style={{ color: '#666', fontSize: '0.9rem', maxWidth: '600px' }}>
+                      Analyze keyword opportunities based on search volume and our calculated "Ranking Probability" metric.
+                    </p>
+                  </div>
+                  <div style={{ fontSize: '0.85rem', color: '#666', background: '#f5f5f5', padding: '0.4rem 0.8rem', borderRadius: '20px' }}>
+                    Showing <strong>{researchResult.suggestions.filter(s => {
+                      const matchesDifficulty = keywordFilters.difficulty === 'all' || s.estimatedDifficulty === keywordFilters.difficulty;
+                      const matchesRelevance = Number(s.relevanceScore) >= Number(keywordFilters.minRelevance);
+                      const matchesTrend = Number(s.trendScore || 0) >= Number(keywordFilters.minVolume);
+                      return matchesDifficulty && matchesRelevance && matchesTrend;
+                    }).length}</strong> results
+                  </div>
+                </div>
 
-                {researchResult.competitors && researchResult.competitors.length > 0 && (
-                  <>
-                    <h4 style={{ marginTop: '2rem' }}>Competitor Overview</h4>
-                    <table className="keyword-table">
+                {researchResult.suggestions && researchResult.suggestions.length > 0 ? (
+                  <div style={{ overflowX: 'auto', borderRadius: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.05)', border: '1px solid #eee' }}>
+                    <table className="keyword-table" style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
                       <thead>
-                        <tr>
-                          <th>URL</th>
-                          <th>Title</th>
-                          <th>Word Count</th>
-                          <th>Keyword Density %</th>
-                          <th>Score / Grade</th>
+                        <tr style={{ background: '#f8f9fa', borderBottom: '2px solid #eee' }}>
+                          <th style={{ textAlign: 'left', padding: '1rem' }}>Keyword</th>
+                          <th style={{ textAlign: 'left', padding: '1rem' }}>Trend Score</th>
+                          <th style={{ textAlign: 'left', padding: '1rem' }}>Difficulty</th>
+                          <th style={{ textAlign: 'left', padding: '1rem' }}>Ranking Probability</th>
+                          <th style={{ textAlign: 'center', padding: '1rem' }}>Action</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {researchResult.competitors.map((c) => (
-                          <tr key={c.url}>
-                            <td>{c.url}</td>
-                            <td>{c.title}</td>
-                            <td>{c.wordCount}</td>
-                            <td>{c.keywordDensity}</td>
-                            <td>
-                              {c.score} ({c.grade})
-                            </td>
-                          </tr>
-                        ))}
+                        {researchResult.suggestions
+                          .filter((s) => {
+                            const matchesDifficulty = keywordFilters.difficulty === 'all' || s.estimatedDifficulty === keywordFilters.difficulty;
+                            const matchesRelevance = Number(s.relevanceScore) >= Number(keywordFilters.minRelevance);
+                            const matchesTrend = Number(s.trendScore || 0) >= Number(keywordFilters.minVolume);
+                            return matchesDifficulty && matchesRelevance && matchesTrend;
+                          })
+                          .map((s, idx) => {
+                            let probability = 50;
+                            let probColor = '#ff9800';
+                            if (s.estimatedDifficulty === 'Easy') { probability = 85; probColor = '#4caf50'; }
+                            else if (s.estimatedDifficulty === 'Medium') { probability = 50; probColor = '#ff9800'; }
+                            else if (s.estimatedDifficulty === 'Hard') { probability = 20; probColor = '#f44336'; }
+
+                            return (
+                              <tr key={idx} style={{ borderBottom: '1px solid #f0f0f0', transition: 'background 0.2s' }}>
+                                <td style={{ padding: '1rem', fontWeight: '500', color: '#2c3e50' }}>{s.keyword}</td>
+                                <td style={{ padding: '1rem' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                    <span style={{ fontWeight: 'bold', color: '#27ae60' }}>{s.trendScore || 0}</span>
+                                    <span style={{ fontSize: '0.75rem', color: '#999' }}>/100</span>
+                                  </div>
+                                </td>
+                                <td style={{ padding: '1rem' }}>
+                                  <span style={{ 
+                                    padding: '0.25rem 0.6rem', 
+                                    borderRadius: '20px', 
+                                    fontSize: '0.75rem', 
+                                    fontWeight: 'bold',
+                                    background: s.estimatedDifficulty === 'Easy' ? '#e8f5e9' : s.estimatedDifficulty === 'Medium' ? '#fff3e0' : '#ffebee',
+                                    color: probColor
+                                  }}>
+                                    {s.estimatedDifficulty}
+                                  </span>
+                                </td>
+                                <td style={{ padding: '1rem' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
+                                    <div style={{ flex: '1', minWidth: '80px', height: '6px', background: '#eee', borderRadius: '10px', overflow: 'hidden' }}>
+                                      <div style={{ width: `${probability}%`, height: '100%', background: probColor, borderRadius: '10px' }}></div>
+                                    </div>
+                                    <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: probColor, width: '35px' }}>{probability}%</span>
+                                  </div>
+                                </td>
+                                <td style={{ padding: '1rem', textAlign: 'center' }}>
+                                  <button style={{ 
+                                    background: '#f0f2f5', 
+                                    border: 'none', 
+                                    padding: '0.4rem 1rem', 
+                                    borderRadius: '6px', 
+                                    cursor: 'pointer',
+                                    fontSize: '0.85rem',
+                                    fontWeight: '600',
+                                    color: '#4b5563',
+                                    transition: 'all 0.2s'
+                                  }}>
+                                    Save
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
                       </tbody>
                     </table>
-                  </>
+                  </div>
+                ) : (
+                  <p style={{ color: '#666', marginTop: '1rem', textAlign: 'center', padding: '2rem', background: '#f9f9f9', borderRadius: '8px' }}>No keyword suggestions generated yet.</p>
                 )}
-              </>
+               </>
             )}
             {!isResearchLoading && !researchResult && (
               <p style={{ marginTop: '1rem', color: '#666' }}>
