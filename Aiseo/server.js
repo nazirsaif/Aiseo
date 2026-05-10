@@ -122,6 +122,29 @@ const userSchema = new mongoose.Schema(
         timezone: { type: String, default: 'Pakistan Standard Time (PKT)' },
         defaultReportFormat: { type: String, default: 'PDF' }
       }
+    },
+    billing: {
+      plan: { type: String, default: 'Professional Plan' },
+      paymentMethods: {
+        type: [{
+          cardNumber: String,
+          expiry: String,
+          isDefault: Boolean
+        }],
+        default: [{ cardNumber: '•••• •••• •••• 4242', expiry: '12/2026', isDefault: true }]
+      }
+    },
+    activeSessions: {
+      type: [{
+        deviceInfo: String,
+        location: String,
+        lastActive: String,
+        isActive: { type: Boolean, default: true }
+      }],
+      default: [
+        { deviceInfo: 'Chrome on Windows', location: 'Rawalpindi, Pakistan', lastActive: 'Current session', isActive: true },
+        { deviceInfo: 'Safari on iPhone', location: 'Rawalpindi, Pakistan', lastActive: 'Last active 2 hours ago', isActive: true }
+      ]
     }
   },
   { timestamps: true }
@@ -251,7 +274,9 @@ function toPublicUser(userDoc) {
         timezone: userDoc.settings?.preferences?.timezone || 'Pakistan Standard Time (PKT)',
         defaultReportFormat: userDoc.settings?.preferences?.defaultReportFormat || 'PDF'
       }
-    }
+    },
+    billing: userDoc.billing || { plan: 'Professional Plan', paymentMethods: [] },
+    activeSessions: userDoc.activeSessions || []
   };
 }
 
@@ -1087,7 +1112,9 @@ app.put('/api/user/me', auth, async (req, res) => {
       company,
       websiteUrl,
       bio,
-      settings
+      settings,
+      billing,
+      activeSessions
     } = req.body;
 
     const user = await User.findById(req.userId);
@@ -1134,6 +1161,14 @@ app.put('/api/user/me', auth, async (req, res) => {
           ...(settings.preferences || {})
         }
       };
+    }
+
+    if (billing !== undefined) {
+      user.billing = billing;
+    }
+
+    if (activeSessions !== undefined) {
+      user.activeSessions = activeSessions;
     }
 
     await user.save();

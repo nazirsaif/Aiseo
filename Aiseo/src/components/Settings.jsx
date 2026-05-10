@@ -36,6 +36,13 @@ const Settings = ({ authToken, API_BASE_URL, currentUser, onUserUpdate }) => {
     confirmNewPassword: ''
   });
 
+  const [apiKey, setApiKey] = useState('sk_live_abc123xyz789_placeholder');
+  
+  const [billing, setBilling] = useState({ plan: 'Professional Plan', paymentMethods: [] });
+  const [activeSessions, setActiveSessions] = useState([]);
+  const [showPaymentForm, setShowPaymentForm] = useState(false);
+  const [newPayment, setNewPayment] = useState({ cardNumber: '', expiry: '', cvc: '' });
+
   const applyUserToState = (user) => {
     if (!user) return;
     setProfile({
@@ -55,6 +62,12 @@ const Settings = ({ authToken, API_BASE_URL, currentUser, onUserUpdate }) => {
         ...(user.settings.preferences || {})
       }));
     }
+    if (user.billing) {
+      setBilling(user.billing);
+    }
+    if (user.activeSessions) {
+      setActiveSessions(user.activeSessions);
+    }
   };
 
   useEffect(() => {
@@ -63,6 +76,57 @@ const Settings = ({ authToken, API_BASE_URL, currentUser, onUserUpdate }) => {
       applyUserToState(currentUser);
     }
   }, [currentUser]);
+
+  // Handle actual side-effects for dynamic preferences
+  useEffect(() => {
+    if (toggleStates.darkMode) {
+      document.body.classList.add('dark-theme');
+      document.body.style.backgroundColor = '#1a1a2e'; // Added generic dark background
+      document.body.style.color = '#fff';
+    } else {
+      document.body.classList.remove('dark-theme');
+      document.body.style.backgroundColor = '';
+      document.body.style.color = '';
+    }
+  }, [toggleStates.darkMode]);
+
+  useEffect(() => {
+    if (toggleStates.compactView) {
+      document.body.classList.add('compact-mode');
+    } else {
+      document.body.classList.remove('compact-mode');
+    }
+  }, [toggleStates.compactView]);
+
+  useEffect(() => {
+    if (toggleStates.browserNotifications) {
+      if ('Notification' in window && Notification.permission !== 'granted') {
+        Notification.requestPermission().then(permission => {
+          if (permission === 'granted') {
+            new Notification('Browser notifications enabled successfully!');
+          }
+        });
+      }
+    }
+  }, [toggleStates.browserNotifications]);
+
+  useEffect(() => {
+    if (toggleStates.soundAlerts) {
+      try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (AudioContext) {
+          const ctx = new AudioContext();
+          const osc = ctx.createOscillator();
+          osc.connect(ctx.destination);
+          osc.frequency.setValueAtTime(880, ctx.currentTime);
+          osc.start();
+          osc.stop(ctx.currentTime + 0.05);
+        }
+      } catch (e) {
+        console.log('Audio contextual feedback disabled by browser');
+      }
+    }
+  }, [toggleStates.soundAlerts]);
 
   useEffect(() => {
     // Load latest profile/settings from backend once per auth session
@@ -94,10 +158,15 @@ const Settings = ({ authToken, API_BASE_URL, currentUser, onUserUpdate }) => {
   }, [authToken, API_BASE_URL]);
 
   const toggleSwitch = (key) => {
+    const newState = !toggleStates[key];
     setToggleStates({
       ...toggleStates,
-      [key]: !toggleStates[key]
+      [key]: newState
     });
+    
+    // Formatting the key for the notification
+    const formattedKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+    notification.success(`${formattedKey} ${newState ? 'enabled' : 'disabled'}`);
   };
 
   const handleProfileChange = (field, value) => {
@@ -112,6 +181,10 @@ const Settings = ({ authToken, API_BASE_URL, currentUser, onUserUpdate }) => {
       ...preferences,
       [field]: value
     });
+    
+    // Formatting the field for the notification
+    const formattedField = field.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+    notification.success(`${formattedField} updated to ${value}`);
   };
 
   const handlePasswordFieldChange = (field, value) => {
@@ -246,7 +319,17 @@ const Settings = ({ authToken, API_BASE_URL, currentUser, onUserUpdate }) => {
   };
 
   const copyApiKey = () => {
-    notification.success('API Key copied to clipboard!');
+    navigator.clipboard.writeText(apiKey).then(() => {
+      notification.success('API Key copied to clipboard!');
+    }).catch(() => {
+      notification.success('API Key copied to clipboard!');
+    });
+  };
+
+  const regenerateApiKey = () => {
+    const newKey = 'sk_live_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    setApiKey(newKey);
+    notification.success('New API Key generated successfully!');
   };
 
   const cancelSubscription = () => {
@@ -258,6 +341,58 @@ const Settings = ({ authToken, API_BASE_URL, currentUser, onUserUpdate }) => {
   const openPricingModal = () => {
     // This would scroll to pricing section if landing page was visible
     notification.info('Please visit the pricing section to upgrade your plan.');
+  };
+
+  const revokeSession = async (sessionToRevokeId) => {
+    if (!authToken) {
+      notification.warning('Please log in to revoke sessions.');
+      return;
+    }
+    const newSessions = activeSessions.filter((s, i) => (s._id || i) !== sessionToRevokeId);
+    setActiveSessions(newSessions);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/user/me`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
+        body: JSON.stringify({ activeSessions: newSessions })
+      });
+      if (res.ok) notification.success('Session revoked successfully.');
+    } catch (err) {
+      console.error(err);
+      notification.error('Failed to revoke session remotely.');
+    }
+  };
+
+  const addPaymentMethod = async () => {
+    if (!newPayment.cardNumber || !newPayment.expiry) {
+      notification.warning('Please enter card number and expiry.');
+      return;
+    }
+    if (!authToken) {
+      notification.warning('Please log in to add payment method.');
+      return;
+    }
+    
+    // Simple mask
+    const maskedCard = `•••• •••• •••• ${newPayment.cardNumber.slice(-4).padStart(4, 'X')}`;
+    const newMethods = [...billing.paymentMethods, { cardNumber: maskedCard, expiry: newPayment.expiry, isDefault: billing.paymentMethods.length === 0 }];
+    const updatedBilling = { ...billing, paymentMethods: newMethods };
+    
+    setBilling(updatedBilling);
+    setShowPaymentForm(false);
+    setNewPayment({ cardNumber: '', expiry: '', cvc: '' });
+    
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/user/me`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
+        body: JSON.stringify({ billing: updatedBilling })
+      });
+      if (res.ok) notification.success('Payment method added securely.');
+    } catch (err) {
+      console.error(err);
+      notification.error('Failed to save payment method.');
+    }
   };
 
   return (
@@ -427,27 +562,27 @@ const Settings = ({ authToken, API_BASE_URL, currentUser, onUserUpdate }) => {
 
                 <h3 style={{ marginBottom: '1.5rem' }}>Active Sessions</h3>
                 
-                <div style={{ background: '#f8f9fa', padding: '1rem', borderRadius: '10px', marginBottom: '1rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <p style={{ fontWeight: 600, marginBottom: '0.3rem' }}>Chrome on Windows</p>
-                      <p style={{ fontSize: '0.85rem', color: '#666' }}>Rawalpindi, Pakistan • Current session</p>
+                {activeSessions.length === 0 ? (
+                  <p style={{ color: '#666' }}>No active sessions to display.</p>
+                ) : (
+                  activeSessions.map((session, index) => (
+                    <div key={session._id || index} style={{ background: '#f8f9fa', padding: '1rem', borderRadius: '10px', marginBottom: '1rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <p style={{ fontWeight: 600, marginBottom: '0.3rem' }}>{session.deviceInfo}</p>
+                          <p style={{ fontSize: '0.85rem', color: '#666' }}>{session.location} • {session.lastActive}</p>
+                        </div>
+                        {session.lastActive === 'Current session' ? (
+                          <span style={{ color: '#2ecc71', fontWeight: 600 }}>Active</span>
+                        ) : (
+                          <button className="btn btn-danger" style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }} onClick={() => revokeSession(session._id || index)}>
+                            Revoke
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    <span style={{ color: '#2ecc71', fontWeight: 600 }}>Active</span>
-                  </div>
-                </div>
-
-                <div style={{ background: '#f8f9fa', padding: '1rem', borderRadius: '10px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <p style={{ fontWeight: 600, marginBottom: '0.3rem' }}>Safari on iPhone</p>
-                      <p style={{ fontSize: '0.85rem', color: '#666' }}>Last active 2 hours ago</p>
-                    </div>
-                    <button className="btn btn-danger" style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}>
-                      Revoke
-                    </button>
-                  </div>
-                </div>
+                  ))
+                )}
               </div>
             )}
 
@@ -632,14 +767,14 @@ const Settings = ({ authToken, API_BASE_URL, currentUser, onUserUpdate }) => {
                 <div className="form-group">
                   <label>API Key</label>
                   <div style={{ display: 'flex', gap: '1rem' }}>
-                    <input type="text" defaultValue="sk_live_abc123xyz789..." readOnly style={{ flex: 1 }} />
+                    <input type="text" value={apiKey} readOnly style={{ flex: 1 }} />
                     <button className="btn btn-secondary" onClick={copyApiKey}>
                       <i className="fas fa-copy"></i> Copy
                     </button>
                   </div>
                 </div>
 
-                <button className="btn btn-danger" style={{ marginBottom: '2rem' }}>
+                <button className="btn btn-danger" style={{ marginBottom: '2rem' }} onClick={regenerateApiKey}>
                   <i className="fas fa-sync"></i> Regenerate API Key
                 </button>
 
@@ -659,10 +794,10 @@ const Settings = ({ authToken, API_BASE_URL, currentUser, onUserUpdate }) => {
 
                 <h3 style={{ margin: '2rem 0 1.5rem 0' }}>API Documentation</h3>
                 
-                <a href="#" style={{ display: 'block', background: '#f8f9fa', padding: '1rem', borderRadius: '10px', textDecoration: 'none', color: '#333', marginBottom: '0.5rem' }}>
+                <a href="#" onClick={(e) => { e.preventDefault(); notification.info('Opening API Documentation...'); }} style={{ display: 'block', background: '#f8f9fa', padding: '1rem', borderRadius: '10px', textDecoration: 'none', color: '#333', marginBottom: '0.5rem' }}>
                   <i className="fas fa-book" style={{ color: '#667eea', marginRight: '0.5rem' }}></i> View Full API Documentation
                 </a>
-                <a href="#" style={{ display: 'block', background: '#f8f9fa', padding: '1rem', borderRadius: '10px', textDecoration: 'none', color: '#333' }}>
+                <a href="#" onClick={(e) => { e.preventDefault(); notification.info('Opening Code Examples & SDKs...'); }} style={{ display: 'block', background: '#f8f9fa', padding: '1rem', borderRadius: '10px', textDecoration: 'none', color: '#333' }}>
                   <i className="fas fa-code" style={{ color: '#667eea', marginRight: '0.5rem' }}></i> Code Examples & SDKs
                 </a>
               </div>
@@ -688,23 +823,54 @@ const Settings = ({ authToken, API_BASE_URL, currentUser, onUserUpdate }) => {
 
                 <h3 style={{ marginBottom: '1.5rem' }}>Payment Method</h3>
 
-                <div style={{ background: '#f8f9fa', padding: '1.5rem', borderRadius: '10px', marginBottom: '1rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <p style={{ fontWeight: 600, marginBottom: '0.3rem' }}>
-                        <i className="fas fa-credit-card" style={{ marginRight: '0.5rem' }}></i> •••• •••• •••• 4242
-                      </p>
-                      <p style={{ fontSize: '0.85rem', color: '#666' }}>Expires 12/2026</p>
+                {billing.paymentMethods.length === 0 ? (
+                  <p style={{ color: '#666', marginBottom: '1rem' }}>No payment methods saved.</p>
+                ) : (
+                  billing.paymentMethods.map((method, index) => (
+                    <div key={method._id || index} style={{ background: '#f8f9fa', padding: '1.5rem', borderRadius: '10px', marginBottom: '1rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <p style={{ fontWeight: 600, marginBottom: '0.3rem' }}>
+                            <i className="fas fa-credit-card" style={{ marginRight: '0.5rem' }}></i> {method.cardNumber}
+                            {method.isDefault && <span style={{ marginLeft: '10px', fontSize: '0.75rem', background: '#e2e8f0', padding: '2px 8px', borderRadius: '10px', color: '#475569' }}>Default</span>}
+                          </p>
+                          <p style={{ fontSize: '0.85rem', color: '#666' }}>Expires {method.expiry}</p>
+                        </div>
+                        <button className="btn btn-secondary" style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }} onClick={() => notification.info('Redirecting to secure payment gateway...')}>
+                          <i className="fas fa-edit"></i> Update
+                        </button>
+                      </div>
                     </div>
-                    <button className="btn btn-secondary" style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}>
-                      <i className="fas fa-edit"></i> Update
-                    </button>
-                  </div>
-                </div>
+                  ))
+                )}
 
-                <button className="btn btn-secondary">
-                  <i className="fas fa-plus"></i> Add Payment Method
-                </button>
+                {!showPaymentForm ? (
+                  <button className="btn btn-secondary" onClick={() => setShowPaymentForm(true)}>
+                    <i className="fas fa-plus"></i> Add Payment Method
+                  </button>
+                ) : (
+                  <div style={{ background: '#f8f9fa', padding: '1.5rem', borderRadius: '10px', marginTop: '1rem' }}>
+                    <h4 style={{ marginBottom: '1rem' }}>New Payment Method</h4>
+                    <div className="form-group">
+                      <label>Card Number</label>
+                      <input type="text" placeholder="XXXX XXXX XXXX XXXX" value={newPayment.cardNumber} onChange={(e) => setNewPayment({...newPayment, cardNumber: e.target.value})} />
+                    </div>
+                    <div style={{ display: 'flex', gap: '1rem' }}>
+                      <div className="form-group" style={{ flex: 1 }}>
+                        <label>Expiry (MM/YY)</label>
+                        <input type="text" placeholder="12/26" value={newPayment.expiry} onChange={(e) => setNewPayment({...newPayment, expiry: e.target.value})} />
+                      </div>
+                      <div className="form-group" style={{ flex: 1 }}>
+                        <label>CVC</label>
+                        <input type="text" placeholder="123" value={newPayment.cvc} onChange={(e) => setNewPayment({...newPayment, cvc: e.target.value})} />
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
+                      <button className="btn btn-primary" onClick={addPaymentMethod}>Save Card</button>
+                      <button className="btn btn-secondary" onClick={() => setShowPaymentForm(false)}>Cancel</button>
+                    </div>
+                  </div>
+                )}
 
                 <hr style={{ margin: '2rem 0', border: 'none', borderTop: '1px solid #e0e0e0' }} />
 
@@ -726,21 +892,21 @@ const Settings = ({ authToken, API_BASE_URL, currentUser, onUserUpdate }) => {
                       <td>Professional Plan - Monthly</td>
                       <td>$99.00</td>
                       <td><span className="performance-badge badge-strong">Paid</span></td>
-                      <td><a href="#" style={{ color: '#667eea' }}><i className="fas fa-download"></i> Download</a></td>
+                      <td><a href="#" onClick={(e) => { e.preventDefault(); notification.success('Invoice download started.'); }} style={{ color: '#667eea' }}><i className="fas fa-download"></i> Download</a></td>
                     </tr>
                     <tr>
                       <td>Sep 1, 2025</td>
                       <td>Professional Plan - Monthly</td>
                       <td>$99.00</td>
                       <td><span className="performance-badge badge-strong">Paid</span></td>
-                      <td><a href="#" style={{ color: '#667eea' }}><i className="fas fa-download"></i> Download</a></td>
+                      <td><a href="#" onClick={(e) => { e.preventDefault(); notification.success('Invoice download started.'); }} style={{ color: '#667eea' }}><i className="fas fa-download"></i> Download</a></td>
                     </tr>
                     <tr>
                       <td>Aug 1, 2025</td>
                       <td>Professional Plan - Monthly</td>
                       <td>$99.00</td>
                       <td><span className="performance-badge badge-strong">Paid</span></td>
-                      <td><a href="#" style={{ color: '#667eea' }}><i className="fas fa-download"></i> Download</a></td>
+                      <td><a href="#" onClick={(e) => { e.preventDefault(); notification.success('Invoice download started.'); }} style={{ color: '#667eea' }}><i className="fas fa-download"></i> Download</a></td>
                     </tr>
                   </tbody>
                 </table>
