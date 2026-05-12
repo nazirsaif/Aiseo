@@ -1,923 +1,532 @@
-import React, { useEffect, useState } from 'react';
-import notification from '../utils/notification';
+import React, { useState, useEffect } from 'react';
 
-const Settings = ({ authToken, API_BASE_URL, currentUser, onUserUpdate }) => {
+const Settings = ({ authToken, currentUser, onUserUpdate, API_BASE_URL }) => {
+  const getInitialProfile = (user) => ({
+    name: user?.name || '',
+    email: user?.email || '',
+    company: user?.company || '',
+    websiteUrl: user?.websiteUrl || '',
+    bio: user?.bio || ''
+  });
+
   const [activeSection, setActiveSection] = useState('profile');
-  const [toggleStates, setToggleStates] = useState({
-    twoFA: false,
-    darkMode: false,
-    compactView: true,
-    autoRefresh: true,
-    rankingChanges: true,
-    keywordOpportunities: true,
-    contentGapAlerts: true,
-    weeklyReports: true,
-    browserNotifications: false,
-    soundAlerts: false
-  });
-
-  const [profile, setProfile] = useState({
-    fullName: '',
-    email: '',
-    company: '',
-    websiteUrl: '',
-    bio: ''
-  });
-
-  const [preferences, setPreferences] = useState({
-    language: 'English (US)',
-    timezone: 'Pakistan Standard Time (PKT)',
-    defaultReportFormat: 'PDF'
-  });
-
-  const [passwordFields, setPasswordFields] = useState({
-    currentPassword: '',
-    newPassword: '',
-    confirmNewPassword: ''
-  });
-
-  const [apiKey, setApiKey] = useState('sk_live_abc123xyz789_placeholder');
-  
-  const [billing, setBilling] = useState({ plan: 'Professional Plan', paymentMethods: [] });
-  const [activeSessions, setActiveSessions] = useState([]);
+  const [profile, setProfile] = useState(getInitialProfile(currentUser));
+  const [preferences, setPreferences] = useState(currentUser?.settings?.preferences || {});
+  const [billing, setBilling] = useState(currentUser?.billing || { plan: 'Free Protocol', paymentMethods: [] });
+  const [activeSessions, setActiveSessions] = useState(currentUser?.activeSessions || []);
+  const [apiKey, setApiKey] = useState(currentUser?.apiKey || 'NEURAL_KEY_PENDING');
   const [showPaymentForm, setShowPaymentForm] = useState(false);
-  const [newPayment, setNewPayment] = useState({ cardNumber: '', expiry: '', cvc: '' });
+  const [toast, setToast] = useState(null);
 
-  const applyUserToState = (user) => {
-    if (!user) return;
-    setProfile({
-      fullName: user.name || '',
-      email: user.email || '',
-      company: user.company || '',
-      websiteUrl: user.websiteUrl || '',
-      bio: user.bio || ''
-    });
-    if (user.settings) {
-      setToggleStates((prev) => ({
-        ...prev,
-        ...(user.settings.toggles || {})
-      }));
-      setPreferences((prev) => ({
-        ...prev,
-        ...(user.settings.preferences || {})
-      }));
-    }
-    if (user.billing) {
-      setBilling(user.billing);
-    }
-    if (user.activeSessions) {
-      setActiveSessions(user.activeSessions);
-    }
-  };
+  const [passwordFields, setPasswordFields] = useState({ currentPassword: '', newPassword: '' });
+  const [toggleStates, setToggleStates] = useState({
+    darkMode: currentUser?.settings?.toggles?.darkMode ?? true,
+    compactView: currentUser?.settings?.toggles?.compactView ?? false,
+    autoRefresh: currentUser?.settings?.toggles?.autoRefresh ?? true,
+    rankingChanges: currentUser?.settings?.toggles?.rankingChanges ?? true,
+    twoFA: false
+  });
 
+  // Synchronize internal state with global currentUser prop
   useEffect(() => {
-    // Initialize from currentUser (from login) first for instant fill
     if (currentUser) {
-      applyUserToState(currentUser);
+      setProfile(getInitialProfile(currentUser));
+      setPreferences(currentUser.settings?.preferences || {});
+      setBilling(currentUser.billing || { plan: 'Free Protocol', paymentMethods: [] });
+      setActiveSessions(currentUser.activeSessions || []);
+      setApiKey(currentUser.apiKey || 'NEURAL_KEY_PENDING');
+
+      const toggles = currentUser.settings?.toggles || {};
+      setToggleStates({
+        darkMode: toggles.darkMode ?? true,
+        compactView: toggles.compactView ?? false,
+        autoRefresh: toggles.autoRefresh ?? true,
+        rankingChanges: toggles.rankingChanges ?? true,
+        twoFA: false
+      });
     }
   }, [currentUser]);
 
-  // Handle actual side-effects for dynamic preferences
-  useEffect(() => {
-    if (toggleStates.darkMode) {
-      document.body.classList.add('dark-theme');
-      document.body.style.backgroundColor = '#1a1a2e'; // Added generic dark background
-      document.body.style.color = '#fff';
-    } else {
-      document.body.classList.remove('dark-theme');
-      document.body.style.backgroundColor = '';
-      document.body.style.color = '';
-    }
-  }, [toggleStates.darkMode]);
-
-  useEffect(() => {
-    if (toggleStates.compactView) {
-      document.body.classList.add('compact-mode');
-    } else {
-      document.body.classList.remove('compact-mode');
-    }
-  }, [toggleStates.compactView]);
-
-  useEffect(() => {
-    if (toggleStates.browserNotifications) {
-      if ('Notification' in window && Notification.permission !== 'granted') {
-        Notification.requestPermission().then(permission => {
-          if (permission === 'granted') {
-            new Notification('Browser notifications enabled successfully!');
-          }
-        });
-      }
-    }
-  }, [toggleStates.browserNotifications]);
-
-  useEffect(() => {
-    if (toggleStates.soundAlerts) {
-      try {
-        const AudioContext = window.AudioContext || window.webkitAudioContext;
-        if (AudioContext) {
-          const ctx = new AudioContext();
-          const osc = ctx.createOscillator();
-          osc.connect(ctx.destination);
-          osc.frequency.setValueAtTime(880, ctx.currentTime);
-          osc.start();
-          osc.stop(ctx.currentTime + 0.05);
-        }
-      } catch (e) {
-        console.log('Audio contextual feedback disabled by browser');
-      }
-    }
-  }, [toggleStates.soundAlerts]);
-
-  useEffect(() => {
-    // Load latest profile/settings from backend once per auth session
-    const loadProfile = async () => {
-      if (!authToken) return;
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/user/me`, {
-          headers: {
-            Authorization: `Bearer ${authToken}`
-          }
-        });
-        const data = await res.json();
-        if (!res.ok) {
-          console.error(data.message || 'Failed to load user profile');
-          return;
-        }
-        if (data.user) {
-          applyUserToState(data.user);
-          if (onUserUpdate) {
-            onUserUpdate(data.user);
-          }
-        }
-      } catch (err) {
-        console.error('Failed to load profile', err);
-      }
-    };
-
-    loadProfile();
-  }, [authToken, API_BASE_URL]);
-
-  const toggleSwitch = (key) => {
-    const newState = !toggleStates[key];
-    setToggleStates({
-      ...toggleStates,
-      [key]: newState
-    });
-    
-    // Formatting the key for the notification
-    const formattedKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
-    notification.success(`${formattedKey} ${newState ? 'enabled' : 'disabled'}`);
+  // --- Notification System ---
+  const showToast = (message, type = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
   };
 
+  // --- Handlers ---
   const handleProfileChange = (field, value) => {
-    setProfile({
-      ...profile,
-      [field]: value
-    });
+    setProfile(prev => ({ ...prev, [field]: value }));
   };
 
-  const handlePreferencesChange = (field, value) => {
-    setPreferences({
-      ...preferences,
-      [field]: value
-    });
-    
-    // Formatting the field for the notification
-    const formattedField = field.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
-    notification.success(`${formattedField} updated to ${value}`);
-  };
-
-  const handlePasswordFieldChange = (field, value) => {
-    setPasswordFields({
-      ...passwordFields,
-      [field]: value
-    });
+  const toggleSwitch = (id) => {
+    setToggleStates(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
   const saveProfile = async () => {
-    if (!authToken) {
-      notification.warning('Please log in to update your profile.');
-      return;
-    }
     try {
       const res = await fetch(`${API_BASE_URL}/api/user/me`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${authToken}`
+          'Authorization': `Bearer ${authToken}`
         },
-        body: JSON.stringify({
-          name: profile.fullName,
-          email: profile.email,
-          company: profile.company,
-          websiteUrl: profile.websiteUrl,
-          bio: profile.bio
-        })
+        body: JSON.stringify({ ...profile })
       });
       const data = await res.json();
-      if (!res.ok) {
-        notification.error(data.message || 'Failed to update profile');
-        return;
+      if (res.ok) {
+        showToast('Identity matrix synchronized.');
+        if (onUserUpdate) onUserUpdate(data.user);
+      } else {
+        showToast(data.message || 'Sync failed.', 'error');
       }
-      if (data.user) {
-        applyUserToState(data.user);
-        if (onUserUpdate) {
-          onUserUpdate(data.user);
-        }
-      }
-      notification.success('Profile updated successfully!');
     } catch (err) {
-      console.error('Failed to save profile', err);
-      notification.error('Unable to connect to server. Is the backend running?');
-    }
-  };
-
-  const saveSettings = async () => {
-    if (!authToken) {
-      notification.warning('Please log in to update your settings.');
-      return;
-    }
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/user/me`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${authToken}`
-        },
-        body: JSON.stringify({
-          settings: {
-            toggles: toggleStates,
-            preferences
-          }
-        })
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        notification.error(data.message || 'Failed to update settings');
-        return;
-      }
-      if (data.user) {
-        applyUserToState(data.user);
-        if (onUserUpdate) {
-          onUserUpdate(data.user);
-        }
-      }
-      notification.success('Settings updated successfully!');
-    } catch (err) {
-      console.error('Failed to save settings', err);
-      notification.error('Unable to connect to server. Is the backend running?');
+      showToast('Sync failed. Please check your uplink.', 'error');
     }
   };
 
   const updatePassword = async () => {
-    const { currentPassword, newPassword, confirmNewPassword } = passwordFields;
-
-    if (!currentPassword || !newPassword || !confirmNewPassword) {
-      notification.warning('Please fill in all password fields.');
-      return;
-    }
-    if (newPassword !== confirmNewPassword) {
-      notification.error('New password and confirmation do not match.');
-      return;
-    }
-    if (newPassword.length < 8) {
-      notification.error('New password must be at least 8 characters long.');
-      return;
-    }
-    if (!authToken) {
-      notification.warning('Please log in to update your password.');
-      return;
-    }
-
+    if (!passwordFields.newPassword) return showToast('New key required.', 'error');
     try {
       const res = await fetch(`${API_BASE_URL}/api/user/change-password`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${authToken}`
+          'Authorization': `Bearer ${authToken}`
         },
-        body: JSON.stringify({
-          currentPassword,
-          newPassword
-        })
+        body: JSON.stringify(passwordFields)
       });
-      const data = await res.json();
-      if (!res.ok) {
-        notification.error(data.message || 'Failed to update password');
-        return;
+      if (res.ok) {
+        showToast('Encryption keys updated.');
+        setPasswordFields({ currentPassword: '', newPassword: '' });
+      } else {
+        const data = await res.json();
+        showToast(data.message || 'Key update failed.', 'error');
       }
-      notification.success('Password updated successfully!');
-      setPasswordFields({
-        currentPassword: '',
-        newPassword: '',
-        confirmNewPassword: ''
-      });
     } catch (err) {
-      console.error('Failed to update password', err);
-      notification.error('Unable to connect to server. Is the backend running?');
+      showToast('Failed to update credentials.', 'error');
+    }
+  };
+
+  const saveSettings = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/user/me`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
+        body: JSON.stringify({ settings: { toggles: toggleStates, preferences } })
+      });
+      if (res.ok) showToast('Operational overrides applied.');
+    } catch (err) {
+      showToast('Failed to save operational logic.', 'error');
     }
   };
 
   const copyApiKey = () => {
-    navigator.clipboard.writeText(apiKey).then(() => {
-      notification.success('API Key copied to clipboard!');
-    }).catch(() => {
-      notification.success('API Key copied to clipboard!');
-    });
+    navigator.clipboard.writeText(apiKey);
+    showToast('Neural API key copied to buffer.');
   };
 
-  const regenerateApiKey = () => {
-    const newKey = 'sk_live_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-    setApiKey(newKey);
-    notification.success('New API Key generated successfully!');
-  };
+  // --- Sub-components ---
+  const SidebarItem = ({ id, icon, label }) => (
+    <div
+      onClick={() => setActiveSection(id)}
+      style={{
+        padding: '1.25rem 1.5rem',
+        cursor: 'pointer',
+        borderRadius: '16px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '1.25rem',
+        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+        background: activeSection === id ? 'rgba(99, 102, 241, 0.1)' : 'transparent',
+        color: activeSection === id ? 'var(--primary)' : 'var(--text-muted)',
+        fontWeight: activeSection === id ? '700' : '500',
+        marginBottom: '0.5rem',
+        border: activeSection === id ? '1px solid rgba(99, 102, 241, 0.2)' : '1px solid transparent',
+        boxShadow: activeSection === id ? '0 10px 30px -10px rgba(99, 102, 241, 0.2)' : 'none'
+      }}
+    >
+      <i className={`fas ${icon}`} style={{ fontSize: '1.1rem', filter: activeSection === id ? 'drop-shadow(0 0 5px var(--primary))' : 'none' }}></i>
+      <span style={{ fontSize: '0.95rem', letterSpacing: '0.02em' }}>{label}</span>
+      {activeSection === id && <div style={{ marginLeft: 'auto', width: '6px', height: '6px', borderRadius: '50%', background: 'var(--primary)', boxShadow: '0 0 10px var(--primary)' }}></div>}
+    </div>
+  );
 
-  const cancelSubscription = () => {
-    if (window.confirm('Are you sure you want to cancel your subscription?')) {
-      notification.info('Subscription cancellation initiated. You will retain access until the end of your billing period.');
-    }
-  };
-
-  const openPricingModal = () => {
-    // This would scroll to pricing section if landing page was visible
-    notification.info('Please visit the pricing section to upgrade your plan.');
-  };
-
-  const revokeSession = async (sessionToRevokeId) => {
-    if (!authToken) {
-      notification.warning('Please log in to revoke sessions.');
-      return;
-    }
-    const newSessions = activeSessions.filter((s, i) => (s._id || i) !== sessionToRevokeId);
-    setActiveSessions(newSessions);
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/user/me`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
-        body: JSON.stringify({ activeSessions: newSessions })
-      });
-      if (res.ok) notification.success('Session revoked successfully.');
-    } catch (err) {
-      console.error(err);
-      notification.error('Failed to revoke session remotely.');
-    }
-  };
-
-  const addPaymentMethod = async () => {
-    if (!newPayment.cardNumber || !newPayment.expiry) {
-      notification.warning('Please enter card number and expiry.');
-      return;
-    }
-    if (!authToken) {
-      notification.warning('Please log in to add payment method.');
-      return;
-    }
-    
-    // Simple mask
-    const maskedCard = `•••• •••• •••• ${newPayment.cardNumber.slice(-4).padStart(4, 'X')}`;
-    const newMethods = [...billing.paymentMethods, { cardNumber: maskedCard, expiry: newPayment.expiry, isDefault: billing.paymentMethods.length === 0 }];
-    const updatedBilling = { ...billing, paymentMethods: newMethods };
-    
-    setBilling(updatedBilling);
-    setShowPaymentForm(false);
-    setNewPayment({ cardNumber: '', expiry: '', cvc: '' });
-    
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/user/me`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
-        body: JSON.stringify({ billing: updatedBilling })
-      });
-      if (res.ok) notification.success('Payment method added securely.');
-    } catch (err) {
-      console.error(err);
-      notification.error('Failed to save payment method.');
-    }
-  };
+  const ControlToggle = ({ id, label, desc }) => (
+    <div style={{
+      padding: '1.5rem',
+      background: 'rgba(255,255,255,0.02)',
+      borderRadius: '24px',
+      border: '1px solid rgba(255,255,255,0.05)',
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      transition: 'transform 0.2s',
+      cursor: 'pointer'
+    }} onClick={() => toggleSwitch(id)}>
+      <div>
+        <div style={{ fontWeight: '700', fontSize: '1.1rem', color: 'var(--text-main)', marginBottom: '0.2rem' }}>{label}</div>
+        <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{desc}</div>
+      </div>
+      <div style={{
+        width: '52px',
+        height: '28px',
+        background: toggleStates[id] ? 'var(--primary)' : 'rgba(255,255,255,0.1)',
+        borderRadius: '20px',
+        position: 'relative',
+        transition: '0.4s'
+      }}>
+        <div style={{
+          position: 'absolute',
+          top: '3px',
+          left: toggleStates[id] ? '27px' : '3px',
+          width: '22px',
+          height: '22px',
+          background: '#fff',
+          borderRadius: '50%',
+          transition: '0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55)',
+          boxShadow: '0 2px 5px rgba(0,0,0,0.2)'
+        }}></div>
+      </div>
+    </div>
+  );
 
   return (
-    <div className="page-section active">
-      <div className="settings-container">
-        <div className="settings-grid">
-          {/* Settings Sidebar */}
-          <div className="settings-sidebar">
-            <ul className="settings-menu">
-              <li
-                className={activeSection === 'profile' ? 'active' : ''}
-                onClick={() => setActiveSection('profile')}
-              >
-                <i className="fas fa-user"></i> Profile Settings
-              </li>
-              <li
-                className={activeSection === 'account' ? 'active' : ''}
-                onClick={() => setActiveSection('account')}
-              >
-                <i className="fas fa-key"></i> Account Security
-              </li>
-              <li
-                className={activeSection === 'preferences' ? 'active' : ''}
-                onClick={() => setActiveSection('preferences')}
-              >
-                <i className="fas fa-cog"></i> Preferences
-              </li>
-              <li
-                className={activeSection === 'notifications' ? 'active' : ''}
-                onClick={() => setActiveSection('notifications')}
-              >
-                <i className="fas fa-bell"></i> Notifications
-              </li>
-              <li
-                className={activeSection === 'api' ? 'active' : ''}
-                onClick={() => setActiveSection('api')}
-              >
-                <i className="fas fa-code"></i> API Settings
-              </li>
-              <li
-                className={activeSection === 'billing' ? 'active' : ''}
-                onClick={() => setActiveSection('billing')}
-              >
-                <i className="fas fa-credit-card"></i> Billing
-              </li>
-            </ul>
-          </div>
+    <div className="page-section active" style={{ maxWidth: '1300px', margin: '0 auto', position: 'relative' }}>
 
-          {/* Settings Content */}
-          <div className="settings-content">
-            {/* Profile Settings */}
-            {activeSection === 'profile' && (
-              <div className="settings-section active">
-                <h2><i className="fas fa-user"></i> Profile Settings</h2>
-                
-                <div className="form-group">
-                  <label>Full Name</label>
-                  <input
-                    type="text"
-                    value={profile.fullName}
-                    onChange={(e) => handleProfileChange('fullName', e.target.value)}
-                    placeholder="Enter your full name"
-                  />
-                </div>
+      {/* Dynamic Toast */}
+      {toast && (
+        <div className="animate-fade-in" style={{
+          position: 'fixed', top: '100px', right: '40px', zIndex: 1000,
+          background: toast.type === 'success' ? 'rgba(16, 185, 129, 0.9)' : 'rgba(244, 63, 94, 0.9)',
+          color: '#fff', padding: '1rem 2rem', borderRadius: '16px', fontWeight: '700',
+          backdropFilter: 'blur(10px)', boxShadow: '0 20px 40px rgba(0,0,0,0.3)',
+          display: 'flex', alignItems: 'center', gap: '0.75rem', border: '1px solid rgba(255,255,255,0.1)'
+        }}>
+          <i className={`fas ${toast.type === 'success' ? 'fa-check-circle' : 'fa-triangle-exclamation'}`}></i>
+          {toast.message}
+        </div>
+      )}
 
-                <div className="form-group">
-                  <label>Email Address</label>
-                  <input
-                    type="email"
-                    value={profile.email}
-                    onChange={(e) => handleProfileChange('email', e.target.value)}
-                    placeholder="Enter your email"
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Company Name</label>
-                  <input
-                    type="text"
-                    value={profile.company}
-                    onChange={(e) => handleProfileChange('company', e.target.value)}
-                    placeholder="Enter company name"
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Website URL</label>
-                  <input
-                    type="url"
-                    value={profile.websiteUrl}
-                    onChange={(e) => handleProfileChange('websiteUrl', e.target.value)}
-                    placeholder="Enter your website URL"
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Bio</label>
-                  <textarea
-                    rows="4"
-                    placeholder="Tell us about yourself and your business..."
-                    value={profile.bio}
-                    onChange={(e) => handleProfileChange('bio', e.target.value)}
-                  ></textarea>
-                </div>
-
-                <button className="btn btn-primary" onClick={saveProfile}>
-                  <i className="fas fa-save"></i> Save Changes
-                </button>
-              </div>
-            )}
-
-            {/* Account Security */}
-            {activeSection === 'account' && (
-              <div className="settings-section active">
-                <h2><i className="fas fa-key"></i> Account Security</h2>
-                
-                <div className="form-group">
-                  <label>Current Password</label>
-                  <input
-                    type="password"
-                    placeholder="Enter current password"
-                    value={passwordFields.currentPassword}
-                    onChange={(e) => handlePasswordFieldChange('currentPassword', e.target.value)}
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>New Password</label>
-                  <input
-                    type="password"
-                    placeholder="Enter new password"
-                    value={passwordFields.newPassword}
-                    onChange={(e) => handlePasswordFieldChange('newPassword', e.target.value)}
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Confirm New Password</label>
-                  <input
-                    type="password"
-                    placeholder="Confirm new password"
-                    value={passwordFields.confirmNewPassword}
-                    onChange={(e) => handlePasswordFieldChange('confirmNewPassword', e.target.value)}
-                  />
-                </div>
-
-                <button className="btn btn-primary" onClick={updatePassword}>
-                  <i className="fas fa-lock"></i> Update Password
-                </button>
-
-                <hr style={{ margin: '2rem 0', border: 'none', borderTop: '1px solid #e0e0e0' }} />
-
-                <h3 style={{ marginBottom: '1.5rem' }}>Two-Factor Authentication</h3>
-                
-                <div className="preference-row">
-                  <div className="preference-info">
-                    <h4>Enable 2FA</h4>
-                    <p>Add an extra layer of security to your account</p>
-                  </div>
-                  <div
-                    className={`toggle-switch ${toggleStates.twoFA ? 'active' : ''}`}
-                    onClick={() => toggleSwitch('twoFA')}
-                  ></div>
-                </div>
-
-                <hr style={{ margin: '2rem 0', border: 'none', borderTop: '1px solid #e0e0e0' }} />
-
-                <h3 style={{ marginBottom: '1.5rem' }}>Active Sessions</h3>
-                
-                {activeSessions.length === 0 ? (
-                  <p style={{ color: '#666' }}>No active sessions to display.</p>
-                ) : (
-                  activeSessions.map((session, index) => (
-                    <div key={session._id || index} style={{ background: '#f8f9fa', padding: '1rem', borderRadius: '10px', marginBottom: '1rem' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                          <p style={{ fontWeight: 600, marginBottom: '0.3rem' }}>{session.deviceInfo}</p>
-                          <p style={{ fontSize: '0.85rem', color: '#666' }}>{session.location} • {session.lastActive}</p>
-                        </div>
-                        {session.lastActive === 'Current session' ? (
-                          <span style={{ color: '#2ecc71', fontWeight: 600 }}>Active</span>
-                        ) : (
-                          <button className="btn btn-danger" style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }} onClick={() => revokeSession(session._id || index)}>
-                            Revoke
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            )}
-
-            {/* Preferences */}
-            {activeSection === 'preferences' && (
-              <div className="settings-section active">
-                <h2><i className="fas fa-cog"></i> Preferences</h2>
-                
-                <div className="form-group">
-                  <label>Language</label>
-                  <select
-                    value={preferences.language}
-                    onChange={(e) => handlePreferencesChange('language', e.target.value)}
-                  >
-                    <option value="English (US)">English (US)</option>
-                    <option value="English (UK)">English (UK)</option>
-                    <option value="Spanish">Spanish</option>
-                    <option value="French">French</option>
-                    <option value="German">German</option>
-                  </select>
-                </div>
-
-                <div className="form-group">
-                  <label>Timezone</label>
-                  <select
-                    value={preferences.timezone}
-                    onChange={(e) => handlePreferencesChange('timezone', e.target.value)}
-                  >
-                    <option value="Pakistan Standard Time (PKT)">Pakistan Standard Time (PKT)</option>
-                    <option value="Eastern Time (ET)">Eastern Time (ET)</option>
-                    <option value="Pacific Time (PT)">Pacific Time (PT)</option>
-                    <option value="Central European Time (CET)">Central European Time (CET)</option>
-                  </select>
-                </div>
-
-                <div className="form-group">
-                  <label>Default Report Format</label>
-                  <select
-                    value={preferences.defaultReportFormat}
-                    onChange={(e) => handlePreferencesChange('defaultReportFormat', e.target.value)}
-                  >
-                    <option value="PDF">PDF</option>
-                    <option value="HTML">HTML</option>
-                    <option value="Excel (XLSX)">Excel (XLSX)</option>
-                    <option value="CSV">CSV</option>
-                  </select>
-                </div>
-
-                <hr style={{ margin: '2rem 0', border: 'none', borderTop: '1px solid #e0e0e0' }} />
-
-                <h3 style={{ marginBottom: '1.5rem' }}>Dashboard Preferences</h3>
-
-                <div className="preference-row">
-                  <div className="preference-info">
-                    <h4>Dark Mode</h4>
-                    <p>Use dark theme for the dashboard</p>
-                  </div>
-                  <div
-                    className={`toggle-switch ${toggleStates.darkMode ? 'active' : ''}`}
-                    onClick={() => toggleSwitch('darkMode')}
-                  ></div>
-                </div>
-
-                <div className="preference-row">
-                  <div className="preference-info">
-                    <h4>Compact View</h4>
-                    <p>Show more data in less space</p>
-                  </div>
-                  <div
-                    className={`toggle-switch ${toggleStates.compactView ? 'active' : ''}`}
-                    onClick={() => toggleSwitch('compactView')}
-                  ></div>
-                </div>
-
-                <div className="preference-row">
-                  <div className="preference-info">
-                    <h4>Auto-refresh Data</h4>
-                    <p>Automatically update dashboard every 5 minutes</p>
-                  </div>
-                  <div
-                    className={`toggle-switch ${toggleStates.autoRefresh ? 'active' : ''}`}
-                    onClick={() => toggleSwitch('autoRefresh')}
-                  ></div>
-                </div>
-
-                <button className="btn btn-primary" onClick={saveSettings}>
-                  <i className="fas fa-save"></i> Save Preferences
-                </button>
-              </div>
-            )}
-
-            {/* Notifications */}
-            {activeSection === 'notifications' && (
-              <div className="settings-section active">
-                <h2><i className="fas fa-bell"></i> Notification Settings</h2>
-                
-                <h3 style={{ marginBottom: '1.5rem' }}>Email Notifications</h3>
-
-                <div className="preference-row">
-                  <div className="preference-info">
-                    <h4>Ranking Changes</h4>
-                    <p>Get notified when your keyword rankings change significantly</p>
-                  </div>
-                  <div
-                    className={`toggle-switch ${toggleStates.rankingChanges ? 'active' : ''}`}
-                    onClick={() => toggleSwitch('rankingChanges')}
-                  ></div>
-                </div>
-
-                <div className="preference-row">
-                  <div className="preference-info">
-                    <h4>New Keyword Opportunities</h4>
-                    <p>Receive alerts about new keyword opportunities</p>
-                  </div>
-                  <div
-                    className={`toggle-switch ${toggleStates.keywordOpportunities ? 'active' : ''}`}
-                    onClick={() => toggleSwitch('keywordOpportunities')}
-                  ></div>
-                </div>
-
-                <div className="preference-row">
-                  <div className="preference-info">
-                    <h4>Content Gap Alerts</h4>
-                    <p>Get notified when new content gaps are identified</p>
-                  </div>
-                  <div
-                    className={`toggle-switch ${toggleStates.contentGapAlerts ? 'active' : ''}`}
-                    onClick={() => toggleSwitch('contentGapAlerts')}
-                  ></div>
-                </div>
-
-                <div className="preference-row">
-                  <div className="preference-info">
-                    <h4>Weekly Reports</h4>
-                    <p>Receive weekly performance summary via email</p>
-                  </div>
-                  <div
-                    className={`toggle-switch ${toggleStates.weeklyReports ? 'active' : ''}`}
-                    onClick={() => toggleSwitch('weeklyReports')}
-                  ></div>
-                </div>
-
-                <hr style={{ margin: '2rem 0', border: 'none', borderTop: '1px solid #e0e0e0' }} />
-
-                <h3 style={{ marginBottom: '1.5rem' }}>In-App Notifications</h3>
-
-                <div className="preference-row">
-                  <div className="preference-info">
-                    <h4>Browser Notifications</h4>
-                    <p>Show desktop notifications for important updates</p>
-                  </div>
-                  <div
-                    className={`toggle-switch ${toggleStates.browserNotifications ? 'active' : ''}`}
-                    onClick={() => toggleSwitch('browserNotifications')}
-                  ></div>
-                </div>
-
-                <div className="preference-row">
-                  <div className="preference-info">
-                    <h4>Sound Alerts</h4>
-                    <p>Play sound when new notifications arrive</p>
-                  </div>
-                  <div
-                    className={`toggle-switch ${toggleStates.soundAlerts ? 'active' : ''}`}
-                    onClick={() => toggleSwitch('soundAlerts')}
-                  ></div>
-                </div>
-
-                <button className="btn btn-primary" onClick={saveSettings}>
-                  <i className="fas fa-save"></i> Save Notification Settings
-                </button>
-              </div>
-            )}
-
-            {/* API Settings */}
-            {activeSection === 'api' && (
-              <div className="settings-section active">
-                <h2><i className="fas fa-code"></i> API Settings</h2>
-                
-                <p style={{ color: '#666', marginBottom: '2rem' }}>Use our API to integrate SEO insights into your own applications and workflows.</p>
-
-                <div className="form-group">
-                  <label>API Key</label>
-                  <div style={{ display: 'flex', gap: '1rem' }}>
-                    <input type="text" value={apiKey} readOnly style={{ flex: 1 }} />
-                    <button className="btn btn-secondary" onClick={copyApiKey}>
-                      <i className="fas fa-copy"></i> Copy
-                    </button>
-                  </div>
-                </div>
-
-                <button className="btn btn-danger" style={{ marginBottom: '2rem' }} onClick={regenerateApiKey}>
-                  <i className="fas fa-sync"></i> Regenerate API Key
-                </button>
-
-                <hr style={{ margin: '2rem 0', border: 'none', borderTop: '1px solid #e0e0e0' }} />
-
-                <h3 style={{ marginBottom: '1.5rem' }}>API Usage</h3>
-
-                <div style={{ background: '#f8f9fa', padding: '1.5rem', borderRadius: '10px', marginBottom: '1rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
-                    <span style={{ color: '#666' }}>Requests this month</span>
-                    <span style={{ fontWeight: 600 }}>8,450 / 10,000</span>
-                  </div>
-                  <div style={{ background: '#e0e0e0', height: '10px', borderRadius: '5px', overflow: 'hidden' }}>
-                    <div style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', width: '84.5%', height: '100%' }}></div>
-                  </div>
-                </div>
-
-                <h3 style={{ margin: '2rem 0 1.5rem 0' }}>API Documentation</h3>
-                
-                <a href="#" onClick={(e) => { e.preventDefault(); notification.info('Opening API Documentation...'); }} style={{ display: 'block', background: '#f8f9fa', padding: '1rem', borderRadius: '10px', textDecoration: 'none', color: '#333', marginBottom: '0.5rem' }}>
-                  <i className="fas fa-book" style={{ color: '#667eea', marginRight: '0.5rem' }}></i> View Full API Documentation
-                </a>
-                <a href="#" onClick={(e) => { e.preventDefault(); notification.info('Opening Code Examples & SDKs...'); }} style={{ display: 'block', background: '#f8f9fa', padding: '1rem', borderRadius: '10px', textDecoration: 'none', color: '#333' }}>
-                  <i className="fas fa-code" style={{ color: '#667eea', marginRight: '0.5rem' }}></i> Code Examples & SDKs
-                </a>
-              </div>
-            )}
-
-            {/* Billing */}
-            {activeSection === 'billing' && (
-              <div className="settings-section active">
-                <h2><i className="fas fa-credit-card"></i> Billing & Subscription</h2>
-                
-                <div style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white', padding: '2rem', borderRadius: '15px', marginBottom: '2rem' }}>
-                  <h3 style={{ marginBottom: '0.5rem' }}>Professional Plan</h3>
-                  <p style={{ opacity: 0.9, marginBottom: '1.5rem' }}>$99/month • Billed monthly</p>
-                  <div style={{ display: 'flex', gap: '1rem' }}>
-                    <button className="btn btn-secondary" style={{ background: 'white', color: '#667eea' }} onClick={openPricingModal}>
-                      <i className="fas fa-arrow-up"></i> Upgrade Plan
-                    </button>
-                    <button className="btn btn-secondary" style={{ background: 'rgba(255,255,255,0.2)', color: 'white', border: 'none' }} onClick={cancelSubscription}>
-                      Cancel Subscription
-                    </button>
-                  </div>
-                </div>
-
-                <h3 style={{ marginBottom: '1.5rem' }}>Payment Method</h3>
-
-                {billing.paymentMethods.length === 0 ? (
-                  <p style={{ color: '#666', marginBottom: '1rem' }}>No payment methods saved.</p>
-                ) : (
-                  billing.paymentMethods.map((method, index) => (
-                    <div key={method._id || index} style={{ background: '#f8f9fa', padding: '1.5rem', borderRadius: '10px', marginBottom: '1rem' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                          <p style={{ fontWeight: 600, marginBottom: '0.3rem' }}>
-                            <i className="fas fa-credit-card" style={{ marginRight: '0.5rem' }}></i> {method.cardNumber}
-                            {method.isDefault && <span style={{ marginLeft: '10px', fontSize: '0.75rem', background: '#e2e8f0', padding: '2px 8px', borderRadius: '10px', color: '#475569' }}>Default</span>}
-                          </p>
-                          <p style={{ fontSize: '0.85rem', color: '#666' }}>Expires {method.expiry}</p>
-                        </div>
-                        <button className="btn btn-secondary" style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }} onClick={() => notification.info('Redirecting to secure payment gateway...')}>
-                          <i className="fas fa-edit"></i> Update
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                )}
-
-                {!showPaymentForm ? (
-                  <button className="btn btn-secondary" onClick={() => setShowPaymentForm(true)}>
-                    <i className="fas fa-plus"></i> Add Payment Method
-                  </button>
-                ) : (
-                  <div style={{ background: '#f8f9fa', padding: '1.5rem', borderRadius: '10px', marginTop: '1rem' }}>
-                    <h4 style={{ marginBottom: '1rem' }}>New Payment Method</h4>
-                    <div className="form-group">
-                      <label>Card Number</label>
-                      <input type="text" placeholder="XXXX XXXX XXXX XXXX" value={newPayment.cardNumber} onChange={(e) => setNewPayment({...newPayment, cardNumber: e.target.value})} />
-                    </div>
-                    <div style={{ display: 'flex', gap: '1rem' }}>
-                      <div className="form-group" style={{ flex: 1 }}>
-                        <label>Expiry (MM/YY)</label>
-                        <input type="text" placeholder="12/26" value={newPayment.expiry} onChange={(e) => setNewPayment({...newPayment, expiry: e.target.value})} />
-                      </div>
-                      <div className="form-group" style={{ flex: 1 }}>
-                        <label>CVC</label>
-                        <input type="text" placeholder="123" value={newPayment.cvc} onChange={(e) => setNewPayment({...newPayment, cvc: e.target.value})} />
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
-                      <button className="btn btn-primary" onClick={addPaymentMethod}>Save Card</button>
-                      <button className="btn btn-secondary" onClick={() => setShowPaymentForm(false)}>Cancel</button>
-                    </div>
-                  </div>
-                )}
-
-                <hr style={{ margin: '2rem 0', border: 'none', borderTop: '1px solid #e0e0e0' }} />
-
-                <h3 style={{ marginBottom: '1.5rem' }}>Billing History</h3>
-
-                <table className="keyword-table">
-                  <thead>
-                    <tr>
-                      <th>Date</th>
-                      <th>Description</th>
-                      <th>Amount</th>
-                      <th>Status</th>
-                      <th>Invoice</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td>Oct 1, 2025</td>
-                      <td>Professional Plan - Monthly</td>
-                      <td>$99.00</td>
-                      <td><span className="performance-badge badge-strong">Paid</span></td>
-                      <td><a href="#" onClick={(e) => { e.preventDefault(); notification.success('Invoice download started.'); }} style={{ color: '#667eea' }}><i className="fas fa-download"></i> Download</a></td>
-                    </tr>
-                    <tr>
-                      <td>Sep 1, 2025</td>
-                      <td>Professional Plan - Monthly</td>
-                      <td>$99.00</td>
-                      <td><span className="performance-badge badge-strong">Paid</span></td>
-                      <td><a href="#" onClick={(e) => { e.preventDefault(); notification.success('Invoice download started.'); }} style={{ color: '#667eea' }}><i className="fas fa-download"></i> Download</a></td>
-                    </tr>
-                    <tr>
-                      <td>Aug 1, 2025</td>
-                      <td>Professional Plan - Monthly</td>
-                      <td>$99.00</td>
-                      <td><span className="performance-badge badge-strong">Paid</span></td>
-                      <td><a href="#" onClick={(e) => { e.preventDefault(); notification.success('Invoice download started.'); }} style={{ color: '#667eea' }}><i className="fas fa-download"></i> Download</a></td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            )}
+      {/* Header Section */}
+      <div style={{ marginBottom: '4rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+        <div>
+          <h2 style={{
+            fontSize: '3.5rem',
+            fontWeight: '900',
+            letterSpacing: '-0.04em',
+            marginBottom: '0.5rem',
+            background: 'linear-gradient(135deg, #fff 0%, #94a3b8 100%)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            filter: 'drop-shadow(0 0 30px rgba(99,102,241,0.2))'
+          }}>
+            Command Center
+          </h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
+            <div style={{
+              padding: '0.4rem 1rem',
+              background: 'rgba(16, 185, 129, 0.1)',
+              color: '#10b981',
+              borderRadius: '12px',
+              fontSize: '0.75rem',
+              fontWeight: '800',
+              border: '1px solid rgba(16, 185, 129, 0.2)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem'
+            }}>
+              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981', boxShadow: '0 0 8px #10b981', animation: 'pulse 2s infinite' }}></span>
+              NEURAL PROTOCOL: STABLE
+            </div>
+            <p style={{ color: 'var(--text-muted)', fontSize: '1.1rem', margin: 0, fontWeight: '500' }}>Manage authorization and neural overrides.</p>
           </div>
         </div>
       </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: '4rem' }}>
+
+        {/* Navigation Sidebar */}
+        <aside style={{ position: 'sticky', top: '120px', alignSelf: 'start' }}>
+          <div className="card" style={{
+            padding: '1.5rem',
+            background: 'rgba(15, 23, 42, 0.4)',
+            border: '1px solid rgba(255,255,255,0.05)',
+            borderRadius: '32px',
+            backdropFilter: 'blur(20px)',
+            boxShadow: '0 20px 50px rgba(0,0,0,0.2)'
+          }}>
+            <SidebarItem id="profile" icon="fa-id-card" label="Analyst Identity" />
+            <SidebarItem id="account" icon="fa-fingerprint" label="Neural Security" />
+            <SidebarItem id="workspace" icon="fa-sliders" label="Workspace Tuning" />
+            <SidebarItem id="api" icon="fa-bolt-lightning" label="Neural API Access" />
+            <SidebarItem id="billing" icon="fa-box-archive" label="Nexus Subscription" />
+          </div>
+
+          {/* Telemetry Card */}
+          <div className="card" style={{
+            marginTop: '2rem',
+            padding: '2rem',
+            background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.05), transparent)',
+            borderRadius: '32px',
+            border: '1px solid rgba(255,255,255,0.03)'
+          }}>
+            <div style={{ fontSize: '0.75rem', fontWeight: '900', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '1.25rem', letterSpacing: '0.1em' }}>Neural Throughput</div>
+            <div style={{ height: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '10px', overflow: 'hidden', marginBottom: '1rem' }}>
+              <div style={{ width: '68%', height: '100%', background: 'linear-gradient(90deg, var(--primary), var(--secondary))', boxShadow: '0 0 15px var(--primary)' }}></div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+              <span style={{ color: 'var(--text-main)', fontWeight: '700' }}>68% Optimized</span>
+              <span style={{ color: 'var(--text-muted)' }}>Level 4</span>
+            </div>
+          </div>
+        </aside>
+
+        {/* Content Area */}
+        <main className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '2.5rem' }}>
+
+          {activeSection === 'profile' && (
+            <>
+              <div className="card" style={{ padding: '3.5rem', borderRadius: '40px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <div style={{ display: 'flex', gap: '4rem', alignItems: 'center', marginBottom: '4rem' }}>
+                  <div style={{ position: 'relative' }}>
+                    <div style={{
+                      width: '140px',
+                      height: '140px',
+                      borderRadius: '45px',
+                      background: 'linear-gradient(135deg, var(--primary), var(--secondary))',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '4rem',
+                      fontWeight: '900',
+                      color: '#fff',
+                      boxShadow: '0 20px 40px rgba(99, 102, 241, 0.4)',
+                      transform: 'rotate(-5deg)'
+                    }}>
+                      {profile.name?.charAt(0) || 'A'}
+                    </div>
+                    <div style={{
+                      position: 'absolute',
+                      bottom: '5px',
+                      right: '5px',
+                      width: '44px',
+                      height: '44px',
+                      borderRadius: '15px',
+                      background: 'var(--bg-surface)',
+                      border: '2px solid var(--border)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      color: 'var(--primary)',
+                      boxShadow: '0 5px 15px rgba(0,0,0,0.3)'
+                    }}>
+                      <i className="fas fa-camera"></i>
+                    </div>
+                  </div>
+                  <div>
+                    <h3 style={{ fontSize: '2rem', fontWeight: '900', marginBottom: '0.5rem' }}>Identity Management</h3>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '1.1rem', maxWidth: '400px' }}>Your profile identity is used across all generated neural reports and team collaborations.</p>
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2.5rem', marginBottom: '3rem' }}>
+                  <div className="form-group">
+                    <label style={{ color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: '800', textTransform: 'uppercase', marginBottom: '1rem', display: 'block' }}>Full Name</label>
+                    <input type="text" value={profile.name || ''} onChange={(e) => handleProfileChange('name', e.target.value)} style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)', padding: '1.25rem', borderRadius: '16px' }} />
+                  </div>
+                  <div className="form-group">
+                    <label style={{ color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: '800', textTransform: 'uppercase', marginBottom: '1rem', display: 'block' }}>Email Alias</label>
+                    <input type="email" value={profile.email || ''} onChange={(e) => handleProfileChange('email', e.target.value)} style={{ background: 'rgba(0,0,0,0.2)', color: "#fff", border: '1px solid rgba(255,255,255,0.05)', padding: '1.25rem', borderRadius: '16px' }} />
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2.5rem', marginBottom: '4rem' }}>
+                  <div className="form-group">
+                    <label style={{ color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: '800', textTransform: 'uppercase', marginBottom: '1rem', display: 'block' }}>Nexus / Company</label>
+                    <input type="text" value={profile.company || ''} onChange={(e) => handleProfileChange('company', e.target.value)} style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)', padding: '1.25rem', borderRadius: '16px' }} />
+                  </div>
+                  <div className="form-group">
+                    <label style={{ color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: '800', textTransform: 'uppercase', marginBottom: '1rem', display: 'block' }}>Primary Intelligence Domain</label>
+                    <input type="url" value={profile.websiteUrl || ''} onChange={(e) => handleProfileChange('websiteUrl', e.target.value)} placeholder="https://..." style={{ background: 'rgba(0,0,0,0.2)', color: "#fff", border: '1px solid rgba(255,255,255,0.05)', padding: '1.25rem', borderRadius: '16px' }} />
+                  </div>
+                </div>
+
+                <button className="btn-primary" onClick={saveProfile} style={{ padding: '1.25rem 3rem', borderRadius: '20px', fontWeight: '800', fontSize: '1rem', boxShadow: '0 15px 30px rgba(99,102,241,0.3)' }}>
+                  Sync Identity Matrix
+                </button>
+              </div>
+
+              <div className="card" style={{ padding: '3rem', borderRadius: '40px', background: 'rgba(255,255,255,0.01)' }}>
+                <h4 style={{ fontSize: '1.25rem', fontWeight: '900', marginBottom: '2rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                  <i className="fas fa-terminal" style={{ color: 'var(--primary)' }}></i> Professional Directive
+                </h4>
+                <textarea
+                  rows="5"
+                  cols="80"
+                  value={profile.bio || ''}
+                  onChange={(e) => handleProfileChange('bio', e.target.value)}
+                  placeholder="Define your strategic SEO objectives for the neural model..."
+                  style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.05)', padding: '1.5rem', borderRadius: '24px', fontSize: '1.1rem', color: 'var(--text-main)' }}
+                ></textarea>
+              </div>
+            </>
+          )}
+
+          {activeSection === 'account' && (
+            <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '2.5rem' }}>
+              <div className="card" style={{ padding: '3.5rem', borderRadius: '40px' }}>
+                <h3 style={{ fontSize: '2rem', fontWeight: '900', marginBottom: '3rem' }}>Encryption Protocol</h3>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2.5rem', marginBottom: '3.5rem' }}>
+                  <div className="form-group">
+                    <label style={{ fontSize: '0.8rem', fontWeight: '800', color: 'var(--text-muted)', marginBottom: '1rem', display: 'block' }}>Current Master Key</label>
+                    <input type="password" value={passwordFields.currentPassword} onChange={(e) => setPasswordFields({ ...passwordFields, currentPassword: e.target.value })} style={{ background: 'rgba(0,0,0,0.2)', padding: '1.25rem', borderRadius: '16px' }} />
+                  </div>
+                  <div className="form-group">
+                    <label style={{ fontSize: '0.8rem', fontWeight: '800', color: 'var(--text-muted)', marginBottom: '1rem', display: 'block' }}>New Neural Key</label>
+                    <input type="password" value={passwordFields.newPassword} onChange={(e) => setPasswordFields({ ...passwordFields, newPassword: e.target.value })} style={{ background: 'rgba(0,0,0,0.2)', padding: '1.25rem', borderRadius: '16px' }} />
+                  </div>
+                </div>
+                <button className="btn-secondary" onClick={updatePassword} style={{ padding: '1.25rem 2.5rem', borderRadius: '20px', fontWeight: '700' }}>Rotate Master Key</button>
+              </div>
+
+              <div className="card" style={{ padding: '2.5rem', borderRadius: '40px', background: 'rgba(16, 185, 129, 0.02)', border: '1px solid rgba(16, 185, 129, 0.1)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', gap: '2rem', alignItems: 'center' }}>
+                    <div style={{ width: '64px', height: '64px', borderRadius: '20px', background: 'rgba(16, 185, 129, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#10b981', fontSize: '1.8rem' }}>
+                      <i className="fas fa-shield-halved"></i>
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: '900', fontSize: '1.3rem', color: '#10b981' }}>Biometric / Hardware 2FA</div>
+                      <p style={{ margin: 0, fontSize: '1rem', color: 'rgba(16, 185, 129, 0.7)' }}>Hardware-level authentication for ultra-secure access.</p>
+                    </div>
+                  </div>
+                  <div onClick={() => toggleSwitch('twoFA')} style={{ width: '64px', height: '32px', background: toggleStates.twoFA ? '#10b981' : 'rgba(255,255,255,0.1)', borderRadius: '20px', position: 'relative', cursor: 'pointer', transition: '0.4s' }}>
+                    <div style={{ position: 'absolute', top: '4px', left: toggleStates.twoFA ? '36px' : '4px', width: '24px', height: '24px', background: '#fff', borderRadius: '50%', transition: '0.4s' }}></div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="card" style={{ padding: '2.5rem', borderRadius: '40px' }}>
+                <h4 style={{ fontWeight: '900', color: 'var(--text-muted)', marginBottom: '2rem', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Neural Terminal History</h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  {activeSessions.map((s, i) => (
+                    <div key={i} style={{ padding: '1.5rem', background: 'rgba(255,255,255,0.02)', borderRadius: '24px', border: '1px solid rgba(255,255,255,0.03)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
+                        <i className={`fas ${s.deviceInfo?.toLowerCase().includes('phone') ? 'fa-mobile-screen' : 'fa-laptop-code'}`} style={{ fontSize: '1.5rem', color: 'var(--primary)', opacity: 0.8 }}></i>
+                        <div>
+                          <div style={{ fontWeight: '800', fontSize: '1.1rem' }}>{s.deviceInfo}</div>
+                          <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>{s.location} • {s.lastActive}</div>
+                        </div>
+                      </div>
+                      {s.lastActive !== 'Current session' && <button className="btn-secondary" style={{ color: '#f43f5e', border: '1px solid rgba(244, 63, 94, 0.2)', padding: '0.6rem 1.25rem', fontSize: '0.85rem', borderRadius: '12px' }}>Terminate</button>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeSection === 'workspace' && (
+            <div className="animate-fade-in card" style={{ padding: '3.5rem', borderRadius: '40px' }}>
+              <h3 style={{ fontSize: '2rem', fontWeight: '900', marginBottom: '3.5rem' }}>Workspace Overrides</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                <ControlToggle id="darkMode" label="Atmospheric Core" desc="Toggle between Deep Midnight and Aurora Light themes." />
+                <ControlToggle id="compactView" label="High Density Output" desc="Condense neural cluster visualizations for expert analysis." />
+                <ControlToggle id="autoRefresh" label="Real-time Synchronization" desc="Automatically refresh neural indices and ranking data." />
+                <ControlToggle id="rankingChanges" label="Velocity Notifications" desc="Get prioritized alerts for critical keyword volatility." />
+              </div>
+              <button className="btn-primary" style={{ marginTop: '4rem', padding: '1.25rem 3rem' }} onClick={saveSettings}>Apply Global Overrides</button>
+            </div>
+          )}
+
+          {activeSection === 'api' && (
+            <div className="animate-fade-in card" style={{ padding: '4rem', borderRadius: '40px' }}>
+              <div style={{ marginBottom: '4rem' }}>
+                <h3 style={{ fontSize: '2rem', fontWeight: '900', marginBottom: '0.75rem' }}>Neural Interface (API)</h3>
+                <p style={{ color: 'var(--text-muted)', fontSize: '1.1rem' }}>Integrate our proprietary SEO intelligence directly into your production pipelines.</p>
+              </div>
+
+              <div style={{ background: 'rgba(0,0,0,0.3)', padding: '3.5rem', borderRadius: '40px', border: '1px solid rgba(255,255,255,0.06)', position: 'relative', overflow: 'hidden' }}>
+                <div style={{ position: 'absolute', top: 0, right: 0, width: '200px', height: '200px', background: 'radial-gradient(circle, rgba(99,102,241,0.1) 0%, transparent 70%)', zIndex: 0 }}></div>
+                <label style={{ fontSize: '0.8rem', fontWeight: '900', color: 'var(--primary)', textTransform: 'uppercase', marginBottom: '1.5rem', display: 'block', letterSpacing: '0.1em' }}>Production Intelligence Key</label>
+                <div style={{ display: 'flex', gap: '1.5rem', marginBottom: '2rem', position: 'relative', zIndex: 1 }}>
+                  <input type="text" value={apiKey} readOnly style={{ flex: 1, fontFamily: 'monospace', fontSize: '1.2rem', letterSpacing: '0.2em', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.08)', padding: '1.5rem', borderRadius: '20px' }} />
+                  <button className="btn-secondary" onClick={copyApiKey} style={{ width: '80px', borderRadius: '20px' }}><i className="fas fa-copy fa-lg"></i></button>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'relative', zIndex: 1 }}>
+                  <span style={{ fontSize: '1rem', color: 'var(--text-muted)' }}>Rotate key if you suspect unauthorized neural access.</span>
+                  <button className="btn-secondary" style={{ color: '#f43f5e', border: '1px solid rgba(244, 63, 94, 0.2)', padding: '0.8rem 1.5rem', borderRadius: '15px' }}>Rotate Key</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeSection === 'billing' && (
+            <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '2.5rem' }}>
+              <div className="card" style={{
+                padding: '4rem',
+                borderRadius: '45px',
+                background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(168, 85, 247, 0.05) 100%)',
+                border: '1px solid rgba(99, 102, 241, 0.15)',
+                position: 'relative',
+                overflow: 'hidden'
+              }}>
+                <div style={{ position: 'absolute', top: '-50px', right: '-50px', width: '300px', height: '300px', background: 'rgba(99, 102, 241, 0.05)', borderRadius: '50%', filter: 'blur(60px)' }}></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4rem', position: 'relative', zIndex: 1 }}>
+                  <div>
+                    <div style={{ fontSize: '0.9rem', fontWeight: '900', color: 'var(--primary)', textTransform: 'uppercase', marginBottom: '0.5rem', letterSpacing: '0.1em' }}>Neural Nexus Access</div>
+                    <h3 style={{ fontSize: '3rem', fontWeight: '900' }}>{billing.plan}</h3>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: '2.5rem', fontWeight: '900', color: 'var(--accent)' }}>$49<span style={{ fontSize: '1rem', color: 'var(--text-muted)' }}>/mo</span></div>
+                    <div style={{ fontSize: '1rem', color: 'var(--text-muted)' }}>Next Pulse: Nov 24, 2025</div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '1.5rem', position: 'relative', zIndex: 1 }}>
+                  <button className="btn-primary" style={{ flex: 1, padding: '1.5rem', borderRadius: '24px', fontSize: '1.1rem' }}>Evolve Subscription</button>
+                  <button className="btn-secondary" style={{ flex: 1, padding: '1.5rem', borderRadius: '24px', fontSize: '1.1rem' }}>Manage Financial Node</button>
+                </div>
+              </div>
+
+              <div className="card" style={{ padding: '3.5rem', borderRadius: '40px' }}>
+                <h4 style={{ fontWeight: '900', marginBottom: '2.5rem', fontSize: '0.9rem', textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.1em' }}>Secure Payment Channels</h4>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
+                  {billing.paymentMethods.map((m, i) => (
+                    <div key={i} style={{ padding: '2rem', background: 'rgba(255,255,255,0.02)', borderRadius: '32px', border: '1px solid rgba(255,255,255,0.05)', position: 'relative' }}>
+                      {m.isDefault && <div style={{ position: 'absolute', top: '20px', right: '20px', padding: '0.4rem 1rem', background: 'var(--primary)', color: '#fff', fontSize: '0.7rem', borderRadius: '8px', fontWeight: '900', boxShadow: '0 5px 15px rgba(99,102,241,0.4)' }}>PRIMARY</div>}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', marginBottom: '1.5rem' }}>
+                        <div style={{ width: '60px', height: '40px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <i className="fab fa-cc-visa fa-2x" style={{ opacity: 0.8 }}></i>
+                        </div>
+                        <div style={{ fontWeight: '800', fontSize: '1.2rem', letterSpacing: '0.05em' }}>{m.cardNumber}</div>
+                      </div>
+                      <div style={{ fontSize: '1rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Exp: {m.expiry}</span>
+                        <i className="fas fa-ellipsis-h" style={{ cursor: 'pointer' }}></i>
+                      </div>
+                    </div>
+                  ))}
+                  <div style={{ padding: '2rem', border: '2px dashed rgba(255,255,255,0.1)', borderRadius: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--primary)', fontWeight: '800', fontSize: '1.1rem', transition: '0.3s' }} className="table-row-hover">
+                    <i className="fas fa-plus-circle" style={{ marginRight: '0.75rem' }}></i> New Channel
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+        </main>
+      </div>
+
+      {/* Background Pulse Effects */}
+      <div style={{ position: 'fixed', top: '20%', left: '-10%', width: '600px', height: '600px', background: 'rgba(99, 102, 241, 0.03)', borderRadius: '50%', filter: 'blur(100px)', zIndex: -1, pointerEvents: 'none' }}></div>
+      <div style={{ position: 'fixed', bottom: '10%', right: '-5%', width: '500px', height: '500px', background: 'rgba(6, 182, 212, 0.03)', borderRadius: '50%', filter: 'blur(100px)', zIndex: -1, pointerEvents: 'none' }}></div>
     </div>
   );
 };
 
 export default Settings;
-

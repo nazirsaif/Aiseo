@@ -13,6 +13,7 @@
 
 const { pipeline } = require('@xenova/transformers');
 const googleTrends = require('google-trends-api');
+const seoAuditService = require('./seoAuditService');
 // ─── Stop words ───────────────────────────────────────────────────────────────
 
 const STOP_WORDS = new Set([
@@ -196,17 +197,18 @@ async function fetchTrendScore(keyword) {
  * Difficulty estimated from competitor saturation and keyword complexity.
  */
 function estimateDifficulty(competitorCount, wordCount, relevanceScore) {
-  // If it's a short keyword (1-2 words) and highly relevant, it's Hard
-  if (wordCount <= 2 && relevanceScore > 60) return 'Hard';
-  
-  // If many competitors are already targeting it, it's Hard
-  if (competitorCount >= 3) return 'Hard';
+  // Hard: High competition or high relevance head/short terms
+  if (competitorCount >= 6 || (wordCount <= 2 && relevanceScore > 65)) {
+    return 'Hard';
+  }
 
-  // Long-tail keywords with low competitor count are Easy
-  if (wordCount >= 4 && competitorCount <= 1) return 'Easy';
-  
-  // Default to Medium
-  return 'Medium';
+  // Medium: Moderate competition or high relevance on mid-length terms
+  if (competitorCount >= 3 || relevanceScore > 50 || (wordCount === 3 && relevanceScore > 40)) {
+    return 'Medium';
+  }
+
+  // Easy: Low competition, long-tail phrases, or lower relevance
+  return 'Easy';
 }
 
 // ─── Core semantic keyword research ──────────────────────────────────────────
@@ -341,9 +343,85 @@ async function generateFallbackSuggestions(baseKeyword) {
   }
 }
 
+/**
+ * Contextual Research: Analyzes a specific URL to find relevant keywords.
+ */
+async function performContextualResearch(baseKeyword, url) {
+  console.log(`[KeywordService] Contextual research for: "${baseKeyword}" via URL: ${url}`);
+  
+  try {
+    // 1. Crawl the target URL
+    const auditResult = await seoAuditService.performSEOAudit(url, null);
+    if (!auditResult.success) {
+      console.warn(`[KeywordService] Failed to crawl URL: ${url}. Falling back to semantic research.`);
+      return generateFallbackSuggestions(baseKeyword);
+    }
+
+    // 2. Extract keywords from the page content (Title, H1s, H2s)
+    const pagePhrases = extractPhrasesFromCompetitors([{ url, elements: auditResult.elements }], baseKeyword);
+    console.log(`[KeywordService] Extracted ${pagePhrases.size} contextual phrases from URL.`);
+
+    const baseEmbedding = await generateEmbedding(baseKeyword);
+    const suggestions = [];
+
+    // 3. Process phrases
+    const allPhrases = Array.from(pagePhrases.keys());
+    const batchSize = 10;
+    for (let i = 0; i < allPhrases.length; i += batchSize) {
+      const batch = allPhrases.slice(i, i + batchSize);
+      const embeddings = await Promise.all(batch.map(p => generateEmbedding(p)));
+
+      batch.forEach((phrase, bi) => {
+        const sim = cosineSimilarity(baseEmbedding, embeddings[bi]);
+        const relevanceScore = Math.round(sim * 100);
+        if (sim < 0.2) return;
+
+        const data = pagePhrases.get(phrase);
+        const wc = phrase.split(' ').length;
+
+        suggestions.push({
+          keyword: phrase,
+          type: wc >= 3 ? 'long-tail' : 'short-tail',
+          intent: classifyIntentLocal(phrase),
+          relevanceScore: Math.max(30, relevanceScore),
+          estimatedDifficulty: estimateDifficulty(1, wc, relevanceScore),
+          competitorCount: 1,
+          occurrences: data.count,
+          isFromCompetitors: true,
+          trendScore: Math.max(10, Math.round(relevanceScore * 0.8))
+        });
+      });
+    }
+
+    // 4. Also add patterns for extra depth
+    const patterns = getPatternSupplement(baseKeyword);
+    patterns.forEach(p => {
+      if (suggestions.length < 50 && !suggestions.some(s => s.keyword === p)) {
+        suggestions.push({
+          keyword: p,
+          type: p.split(' ').length >= 3 ? 'long-tail' : 'short-tail',
+          intent: classifyIntentLocal(p),
+          relevanceScore: 50,
+          estimatedDifficulty: 'Medium',
+          competitorCount: 0,
+          occurrences: 0,
+          isFromCompetitors: false,
+          trendScore: 30
+        });
+      }
+    });
+
+    return suggestions.sort((a, b) => b.relevanceScore - a.relevanceScore);
+  } catch (err) {
+    console.error('[KeywordService] Contextual research failed:', err.message);
+    return generateFallbackSuggestions(baseKeyword);
+  }
+}
+
 module.exports = {
   performSemanticKeywordResearch,
   generateFallbackSuggestions,
+  performContextualResearch,
   extractPhrasesFromCompetitors,
   estimateDifficulty,
   classifyIntentLocal

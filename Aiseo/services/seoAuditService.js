@@ -191,15 +191,45 @@ function fleschReadingEase(text) {
 }
 
 async function fetchHTMLFromURL(url) {
-  const response = await axios.get(url, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      'Accept-Language': 'en-US,en;q=0.5'
-    },
-    timeout: 15000
-  });
-  return response.data;
+  const https = require('https');
+  const agent = new https.Agent({ rejectUnauthorized: false });
+  
+  const userAgents = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0'
+  ];
+
+  try {
+    const response = await axios.get(url, {
+      headers: {
+        'User-Agent': userAgents[0],
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Cache-Control': 'no-cache',
+        'Referer': 'https://www.google.com/'
+      },
+      timeout: 35000,
+      maxRedirects: 10,
+      httpsAgent: agent // Bypass SSL issues for older gaming sites
+    });
+    return response.data;
+  } catch (err) {
+    // Try one more time with Googlebot UA if the first one fails
+    try {
+      const retryResponse = await axios.get(url, {
+        headers: { 'User-Agent': userAgents[1] },
+        timeout: 20000,
+        httpsAgent: agent
+      });
+      return retryResponse.data;
+    } catch (retryErr) {
+      if (retryErr.response && retryErr.response.status === 403) {
+        throw new Error(`Access Denied (403): This domain is protected. Please use the Manual HTML Audit tool.`);
+      }
+      throw new Error(`Connection Failed: ${retryErr.message}. Ensure the URL is public.`);
+    }
+  }
 }
 
 // ─── Deep Crawl Audit ───────────────────────────────────────────────────────

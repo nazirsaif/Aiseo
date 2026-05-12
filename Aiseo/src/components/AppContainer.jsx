@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
 import Navbar from './Navbar';
-import Dashboard from './Dashboard';
+import CompetitorAnalysis from './CompetitorAnalysis';
+import KeywordResearch from './KeywordResearch';
+import ContentGap from './ContentGap';
+import SEOAudit from './SEOAudit';
 import Reports from './Reports';
 import Settings from './Settings';
-import SEOAudit from './SEOAudit';
-import NotificationPanel from './NotificationPanel';
+import Dashboard from './Dashboard';
 
 const AppContainer = ({ authToken, currentUser, onLogout, API_BASE_URL, onUserUpdate }) => {
   const [currentPage, setCurrentPage] = useState('dashboard');
-  const [showNotifications, setShowNotifications] = useState(false);
 
   return (
     <div className="app-container active">
@@ -17,12 +18,20 @@ const AppContainer = ({ authToken, currentUser, onLogout, API_BASE_URL, onUserUp
         currentPage={currentPage}
         onNavigate={setCurrentPage}
         onLogout={onLogout}
-        onToggleNotifications={() => setShowNotifications(!showNotifications)}
       />
 
       <div className="container">
+        {currentPage === 'keyword-research' && (
+          <KeywordResearch authToken={authToken} API_BASE_URL={API_BASE_URL} />
+        )}
         {currentPage === 'dashboard' && (
-          <Dashboard authToken={authToken} API_BASE_URL={API_BASE_URL} />
+          <Dashboard currentUser={currentUser} authToken={authToken} API_BASE_URL={API_BASE_URL} onNavigate={setCurrentPage} />
+        )}
+        {currentPage === 'competitor-analysis' && (
+          <CompetitorAnalysis authToken={authToken} API_BASE_URL={API_BASE_URL} />
+        )}
+        {currentPage === 'content-gap' && (
+          <ContentGap authToken={authToken} API_BASE_URL={API_BASE_URL} />
         )}
         {currentPage === 'seo-audit' && (
           <SEOAudit authToken={authToken} API_BASE_URL={API_BASE_URL} />
@@ -39,14 +48,8 @@ const AppContainer = ({ authToken, currentUser, onLogout, API_BASE_URL, onUserUp
           />
         )}
       </div>
-
-      <NotificationPanel
-        isActive={showNotifications}
-        onClose={() => setShowNotifications(false)}
-      />
     </div>
   );
 };
 
 export default AppContainer;
-

@@ -84,7 +84,12 @@ def get_issue_feedback(issue_name, data):
 
     # Algorithmically construct the Issue Description
     intros = ["The analysis engine detected", "Our AI model flagged", "The system identified", "Predictive algorithms found", "The crawler encountered"]
-    issues = [f"an anomaly regarding your {issue_formatted}", f"a critical issue with {issue_formatted}", f"a negative algorithmic signal for {issue_formatted}"]
+    issues = [
+        f"an anomaly regarding your {issue_formatted}", 
+        f"a critical issue with {issue_formatted}", 
+        f"a negative algorithmic signal for {issue_formatted}",
+        f"a minor optimization opportunity for {issue_formatted}"
+    ]
     msg = f"{random.choice(intros)} {random.choice(issues)}{stat}."
     
     # Algorithmically construct the Actionable Recommendation
@@ -235,6 +240,270 @@ def analyze_seo():
             "projected_score": projected_score
         }
     })
+
+@app.route('/compare', methods=['POST'])
+def compare_sites():
+    """
+    Compares Own Website vs Competitor Website.
+    Expects JSON: { "own": {...metrics...}, "competitor": {...metrics...} }
+    """
+    data = request.json
+    own_data = data.get('own', {})
+    comp_data = data.get('competitor', {})
+
+    if not ml_model:
+        return jsonify({"status": "error", "message": "ML Model Offline"}), 500
+
+    def get_score_and_issues(site_data):
+        try:
+            input_vector = []
+            for col in feature_cols:
+                val = site_data.get(col, 0)
+                if val is None: val = 0
+                if isinstance(val, bool): val = int(val)
+                if isinstance(val, (list, set)): val = len(val)
+                input_vector.append(val)
+            
+            scaled = scaler.transform([input_vector])
+            with torch.no_grad():
+                issues_preds, score_pred = ml_model(torch.FloatTensor(scaled))
+            
+            flags = (issues_preds > 0.5).int().numpy()[0]
+            score = int(score_pred.item() * 100)
+            
+            # Omni-AI Overlay
+            omni_anomalies = analyze_omni_layer(site_data)
+            score = max(0, score - len(omni_anomalies))
+            
+            detected_issues = []
+            for i, has_issue in enumerate(flags):
+                if has_issue == 1:
+                    detected_issues.append(issue_cols[i])
+            for omni in omni_anomalies:
+                detected_issues.append(omni)
+                
+            return score, detected_issues
+        except Exception as e:
+            print(f"Site Analysis Error: {str(e)}")
+            return 50, ["Model processing error: Falling back to heuristic baseline."]
+
+    own_score, own_issues = get_score_and_issues(own_data)
+    comp_score, comp_issues = get_score_and_issues(comp_data)
+
+    # Ranking Reason Logic
+    reasons = []
+    score_diff = comp_score - own_score
+    
+    # 1. Critical Technical Gaps
+    if own_data.get('h1Count', 0) == 0:
+        reasons.append("Critical Gap: Your page is missing an H1 heading. This is a high-priority fix for keyword indexing.")
+    elif own_data.get('h1Count', 0) > 1:
+        reasons.append("Structure Issue: You have multiple H1 tags. Best practice is to have exactly one H1 to define the page topic.")
+
+    # 2. Content & Topical Depth
+    own_words = own_data.get('content_length', 0)
+    comp_words = comp_data.get('content_length', 0)
+    if comp_words > own_words + 100: # Lowered threshold
+        reasons.append(f"Content Gap: Competitor has {comp_words} words vs your {own_words}. Search engines favor comprehensive topical depth.")
+    elif own_words > comp_words + 1000:
+        reasons.append("Authority Edge: Your content depth is significantly superior, creating a high barrier to entry.")
+    
+    # 3. Heading Hierarchy (H2 & H3)
+    own_h2 = len(own_data.get('h2Tags', []))
+    comp_h2 = len(comp_data.get('h2Tags', []))
+    if comp_h2 > own_h2:
+        reasons.append(f"Semantic Structure: Competitor uses more H2 subheadings ({comp_h2} vs {own_h2}), creating a better outline for indexers.")
+    
+    own_h3 = own_data.get('h3Count', 0)
+    comp_h3 = comp_data.get('h3Count', 0)
+    if comp_h3 > own_h3 + 3:
+        reasons.append(f"Granular Depth: Competitor leverages H3 tiers for better topic clustering ({comp_h3} vs {own_h3}).")
+
+    # 4. Link Architecture
+    own_links = own_data.get('num_internal_links', 0)
+    comp_links = comp_data.get('num_internal_links', 0)
+    if comp_links > own_links + 5: # Lowered threshold
+        reasons.append(f"Link Density: Competitor has a more interconnected internal architecture ({comp_links} links), distributing PageRank more effectively.")
+    elif own_links > comp_links + 15:
+        reasons.append("Navigation Edge: Your internal linking is robust, helping users and crawlers discover deeper pages faster.")
+
+    # 5. Media & Visual Engagement
+    own_imgs = own_data.get('imageCount', 0)
+    comp_imgs = comp_data.get('imageCount', 0)
+    if comp_imgs > own_imgs:
+        reasons.append(f"Media Richness: Competitor uses more images, which correlates with better user engagement and 'time on page' signals.")
+    
+    if own_data.get('imagesWithoutAlt', 0) > 0:
+        reasons.append(f"Accessibility Gap: You have {own_data.get('imagesWithoutAlt')} images missing alt text. Competitors with better accessibility often rank higher.")
+
+    # 6. Authority & Technical Performance
+    if comp_data.get('domain_authority', 0) > own_data.get('domain_authority', 0):
+        reasons.append(f"Trust Signal: Competitor domain authority is higher. They likely have a more established backlink profile.")
+    
+    own_scripts = own_data.get('omni_script_count', 0)
+    comp_scripts = comp_data.get('omni_script_count', 0)
+    if own_scripts > comp_scripts + 5:
+        reasons.append("Performance Risk: Your page has significantly more tracking scripts than the competitor, which may impact Core Web Vitals.")
+
+    # 7. Overall Health Comparison
+    if len(comp_issues) < len(own_issues):
+        reasons.append(f"Technical Debt: Your page has {len(own_issues)} flags while the competitor has {len(comp_issues)}. A 'cleaner' site is a stronger ranking signal.")
+        
+    if not reasons:
+        reasons.append("Competitive Parity: Both sites are extremely well-optimized. Focus on off-page SEO and backlinks to gain an edge.")
+
+    # Content Gap Logic (Enhanced RAG - Expert Level)
+    try:
+        # Massive list of noise words
+        STOP_WORDS = {
+            'this', 'that', 'with', 'from', 'your', 'their', 'about', 'would', 'could', 'should', 
+            'generic', 'content', 'website', 'page', 'home', 'click', 'here', 'more', 'info', 
+            'service', 'services', 'provider', 'company', 'contact', 'us', 'login', 'signup',
+            'sign', 'up', 'menu', 'search', 'privacy', 'policy', 'terms', 'conditions', 'rights',
+            'reserved', 'copyright', 'navigation', 'footer', 'header', 'sidebar', 'link', 'links',
+            'social', 'media', 'follow', 'facebook', 'twitter', 'instagram', 'linkedin', 'youtube',
+            'email', 'address', 'phone', 'number', 'call', 'today', 'free', 'get', 'started',
+            'read', 'learn', 'details', 'check', 'out', 'view', 'all', 'latest', 'news', 'blog',
+            'posts', 'comments', 'posted', 'by', 'date', 'author', 'category', 'tags'
+        }
+        
+        def extract_weighted_keywords(site_data):
+            if not site_data: return {}
+            # Topic is usually in the title or H1
+            title_text = (site_data.get('title') or '').lower()
+            h1_text = " ".join([str(t) for t in (site_data.get('h1Tags') or [])]).lower()
+            topic_context = set(title_text.split() + h1_text.split())
+            topic_context = {w for w in topic_context if len(w) > 3 and w not in STOP_WORDS}
+
+            weighted_phrases = {}
+            
+            def add_phrases(text_list, weight):
+                if not text_list: return
+                for raw_text in text_list:
+                    if not raw_text: continue
+                    # Clean text
+                    clean_text = "".join(c for c in str(raw_text).lower() if c.isalnum() or c.isspace())
+                    tokens = [t for t in clean_text.split() if len(t) > 3 and t not in STOP_WORDS]
+                    
+                    # Single words
+                    for t in tokens:
+                        relevance_boost = 1.5 if any(tw in t or t in tw for tw in topic_context) else 1.0
+                        weighted_phrases[t] = weighted_phrases.get(t, 0) + (weight * relevance_boost)
+                    
+                    # Bigrams
+                    for i in range(len(tokens) - 1):
+                        bigram = f"{tokens[i]} {tokens[i+1]}"
+                        relevance_boost = 2.0 if any(tw in bigram for tw in topic_context) else 1.0
+                        weighted_phrases[bigram] = weighted_phrases.get(bigram, 0) + (weight * 1.2 * relevance_boost)
+            
+            add_phrases([(site_data.get('title') or '')], 4.0)
+            add_phrases((site_data.get('h1Tags') or []), 3.0)
+            add_phrases((site_data.get('h2Tags') or []), 1.5)
+            
+            return weighted_phrases
+
+        own_weighted = extract_weighted_keywords(own_data)
+        comp_weighted = extract_weighted_keywords(comp_data)
+        
+        gaps_with_scores = []
+        for phrase, score in comp_weighted.items():
+            if phrase not in own_weighted:
+                gaps_with_scores.append((phrase, score))
+                
+        gaps_with_scores.sort(key=lambda x: x[1], reverse=True)
+        gap_keywords = [g[0] for g in gaps_with_scores[:15]]
+        
+        # Clustering
+        clusters = {"Strategic": [], "Informational": [], "Action-Oriented": []}
+        for kw in gap_keywords:
+            if any(t in kw for t in ['best', 'top', 'review', 'vs', 'comparison']):
+                clusters["Strategic"].append(kw.title())
+            elif any(t in kw for t in ['how', 'what', 'why', 'guide', 'tips']):
+                clusters["Informational"].append(kw.title())
+            else:
+                clusters["Action-Oriented"].append(kw.title())
+
+        # Replacement logic
+        user_tokens = sorted(own_weighted.items(), key=lambda x: x[1])
+        filler_candidates = [t[0] for t in user_tokens if t[0] in {'more', 'learn', 'click', 'read', 'details', 'info', 'here'}]
+        if not filler_candidates: filler_candidates = ["generic content", "filler text", "unoptimized sections"]
+
+        replacements = []
+        replacements = []
+        # Dynamic Count: Show all significant gaps (Importance Score > 1.5) up to 20
+        for i, (phrase, score) in enumerate(gaps_with_scores):
+            if score < 1.5 or i >= 20:
+                break
+                
+            instead = filler_candidates[i % len(filler_candidates)]
+            
+            # Dynamic Strategy Engine
+            templates = {
+                "Strategic": [
+                    f"Competitive edge detected. Integrating '{phrase}' as a primary H2 heading will directly challenge the competitor's dominance in this niche.",
+                    f"High-intent phrase found. Adding '{phrase}' to your product descriptions or service blocks will capture ready-to-convert traffic.",
+                    f"Strategic gap identified. This keyword bridges the trust-gap between your '{instead}' content and the competitor's authority."
+                ],
+                "Informational": [
+                    f"Topical completeness boost. Expanding your guide to include a dedicated section on '{phrase}' will satisfy search engine depth requirements.",
+                    f"Semantic enrichment. We recommend using '{phrase}' within your first 2 paragaphs to establish topical context immediately.",
+                    f"Educational gap. Replacing '{instead}' with this specialized term demonstrates expertise and increases user dwell time."
+                ],
+                "Action-Oriented": [
+                    f"Density optimization. Swapping the filler word '{instead}' for '{phrase}' improves your keyword-to-content ratio for this core topic.",
+                    f"Vocabulary alignment. Our analysis shows '{phrase}' is a high-frequency term in this niche; your current content lacks this semantic connection.",
+                    f"Conversion focus. Using '{phrase}' in your call-to-action blocks or subheaders improves topical relevance for search crawlers."
+                ]
+            }
+            
+            cluster_type = "Action-Oriented"
+            if any(t in phrase.lower() for t in ['best', 'top', 'review', 'vs', 'comparison']):
+                cluster_type = "Strategic"
+            elif any(t in phrase.lower() for t in ['how', 'what', 'why', 'guide', 'tips']):
+                cluster_type = "Informational"
+            
+            import random
+            strategy = random.choice(templates[cluster_type])
+
+            replacements.append({
+                "use": phrase.title(),
+                "instead_of": instead,
+                "reason": f"Topic Intelligence: {strategy} (Importance Score: {score:.1f})"
+            })
+            
+        return jsonify({
+            "status": "success",
+            "comparison": {
+                "own_score": own_score,
+                "competitor_score": comp_score,
+                "predicted_rank_diff": max(1, abs(comp_score - own_score) // 4) if comp_score != own_score else 0,
+                "reasons_why_above": reasons,
+                "content_gap": {
+                    "missing_keywords": gap_keywords,
+                    "suggestions": replacements,
+                    "clusters": clusters
+                }
+            }
+        })
+
+    except Exception as e:
+        print(f"CRITICAL RAG ERROR: {str(e)}")
+        # Fallback response if RAG fails but comparison logic worked
+        return jsonify({
+            "status": "success",
+            "comparison": {
+                "own_score": own_score,
+                "competitor_score": comp_score,
+                "predicted_rank_diff": 0,
+                "reasons_why_above": reasons,
+                "content_gap": {
+                    "missing_keywords": [],
+                    "suggestions": [],
+                    "clusters": {},
+                    "error": "Content gap analysis partially failed"
+                }
+            }
+        })
 
 if __name__ == '__main__':
     app.run(port=5001, debug=True)

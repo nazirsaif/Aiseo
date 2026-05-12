@@ -9,173 +9,147 @@ const LandingPage = ({ onOpenLogin, onOpenRegister, onSelectPlan }) => {
   };
 
   return (
-    <div className="landing-page">
-      {/* Landing Navigation */}
-      <nav className="landing-nav">
-        <div className="landing-logo">
-          <i className="fas fa-search-dollar"></i>
-          SEO Insights
+    <div className="landing-page" style={{ color: '#fff' }}>
+      {/* Premium Glass Nav */}
+      <nav style={{
+        position: 'fixed', top: 0, left: 0, right: 0, zIndex: 1000,
+        background: 'rgba(2, 6, 23, 0.7)', backdropFilter: 'blur(15px)',
+        borderBottom: '1px solid rgba(255,255,255,0.05)',
+        padding: '1.25rem 2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', fontSize: '1.5rem', fontWeight: '800', background: 'linear-gradient(to right, #6366f1, #a855f7)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+          <i className="fas fa-brain" style={{ WebkitTextFillColor: 'initial', color: '#6366f1' }}></i>
+          Automated SEO
         </div>
-        <div className="landing-nav-links">
-          <a href="#features">Features</a>
-          <a href="#pricing">Pricing</a>
-          <button className="btn btn-white" onClick={onOpenLogin}>
-            <i className="fas fa-sign-in-alt"></i> Sign In
-          </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+          <a href="#features" style={{ color: 'var(--text-muted)', textDecoration: 'none', fontSize: '0.9rem', fontWeight: '500' }}>Features</a>
+          <a href="#pricing" style={{ color: 'var(--text-muted)', textDecoration: 'none', fontSize: '0.9rem', fontWeight: '500' }}>Pricing</a>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginLeft: '1rem' }}>
+            <button className="btn-glass" onClick={onOpenLogin}>
+              <i className="fas fa-sign-in-alt"></i> Login
+            </button>
+            <button className="btn-primary" onClick={onOpenRegister} style={{ padding: '0.6rem 1.2rem', fontSize: '0.9rem' }}>
+              Sign Up
+            </button>
+          </div>
         </div>
       </nav>
 
-      {/* Hero Section */}
-      <section className="hero-section">
-        <h1>AI-Powered SEO Insights<br />That Drive Results</h1>
-        <p>Discover keyword opportunities, analyze competitors, and optimize your content with advanced AI technology. Get actionable insights in minutes, not hours.</p>
-        <div className="hero-buttons">
-          <button className="btn btn-white" onClick={onOpenRegister}>
-            <i className="fas fa-rocket"></i> Start Free Trial
-          </button>
-          <button className="btn btn-outline" onClick={scrollToPricing}>
-            <i className="fas fa-tag"></i> View Pricing
-          </button>
-        </div>
-      </section>
+      {/* Hero Section - High Impact */}
+      <section style={{ 
+        padding: '12rem 2rem 8rem 2rem', textAlign: 'center', 
+        background: 'radial-gradient(circle at top, rgba(99, 102, 241, 0.15) 0%, transparent 50%)',
+        position: 'relative', overflow: 'hidden'
+      }}>
+        {/* Animated Background Elements */}
+        <div style={{ position: 'absolute', top: '10%', left: '50%', transform: 'translateX(-50%)', width: '600px', height: '600px', background: 'var(--primary)', filter: 'blur(150px)', opacity: 0.1, zIndex: -1 }}></div>
 
-      {/* Features Section */}
-      <section className="features-section" id="features">
-        <div className="features-container">
-          <h2 className="section-title">Powerful Features for Modern SEO</h2>
-          <p className="section-subtitle">Everything you need to dominate search rankings and outperform competitors</p>
-          
-          <div className="features-grid">
-            <div className="feature-card">
-              <div className="feature-icon">
-                <i className="fas fa-layer-group"></i>
-              </div>
-              <h3>Intelligent Keyword Clustering</h3>
-              <p>Automatically group related keywords and identify high-value opportunities with AI-powered semantic analysis.</p>
-            </div>
-
-            <div className="feature-card">
-              <div className="feature-icon">
-                <i className="fas fa-search"></i>
-              </div>
-              <h3>SERP Analysis</h3>
-              <p>Deep dive into search results to understand what's ranking and why. Get actionable insights to improve your rankings.</p>
-            </div>
-
-            <div className="feature-card">
-              <div className="feature-icon">
-                <i className="fas fa-exclamation-triangle"></i>
-              </div>
-              <h3>Content Gap Detection</h3>
-              <p>Discover what your competitors are ranking for that you're not. Fill the gaps and capture more market share.</p>
-            </div>
-
-            <div className="feature-card">
-              <div className="feature-icon">
-                <i className="fas fa-lightbulb"></i>
-              </div>
-              <h3>AI Recommendations</h3>
-              <p>Get personalized, actionable suggestions powered by machine learning to improve your SEO performance.</p>
-            </div>
-
-            <div className="feature-card">
-              <div className="feature-icon">
-                <i className="fas fa-chart-line"></i>
-              </div>
-              <h3>Performance Tracking</h3>
-              <p>Monitor your keyword rankings, traffic trends, and SEO score over time with beautiful visualizations.</p>
-            </div>
-
-            <div className="feature-card">
-              <div className="feature-icon">
-                <i className="fas fa-file-alt"></i>
-              </div>
-              <h3>Automated Reporting</h3>
-              <p>Generate comprehensive SEO reports in seconds. Export as PDF, HTML, or Excel for easy sharing.</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Pricing Section */}
-      <section className="pricing-section" id="pricing">
-        <h2 className="section-title">Choose Your Perfect Plan</h2>
-        <p className="section-subtitle">Flexible pricing for businesses of all sizes</p>
-        
-        <div className="pricing-grid">
-          {/* Starter Plan */}
-          <div className="pricing-card">
-            <h3>Starter</h3>
-            <div className="price">$29<span>/month</span></div>
-            <p style={{ color: '#666', marginBottom: '1.5rem' }}>Perfect for small businesses and bloggers</p>
-            <ul className="pricing-features">
-              <li><i className="fas fa-check"></i> 10 keyword analyses per month</li>
-              <li><i className="fas fa-check"></i> 5 content gap reports</li>
-              <li><i className="fas fa-check"></i> Basic SERP insights</li>
-              <li><i className="fas fa-check"></i> Email support</li>
-              <li><i className="fas fa-check"></i> 1 website tracking</li>
-              <li><i className="fas fa-check"></i> PDF reports</li>
-            </ul>
-            <button className="btn btn-primary" style={{ width: '100%' }} onClick={() => onSelectPlan('starter')}>
-              Get Started
-            </button>
-          </div>
-
-          {/* Professional Plan (Popular) */}
-          <div className="pricing-card popular">
-            <div className="popular-badge">
-              <i className="fas fa-star"></i> Most Popular
-            </div>
-            <h3>Professional</h3>
-            <div className="price">$99<span>/month</span></div>
-            <p style={{ color: '#666', marginBottom: '1.5rem' }}>Ideal for growing businesses and agencies</p>
-            <ul className="pricing-features">
-              <li><i className="fas fa-check"></i> 100 keyword analyses per month</li>
-              <li><i className="fas fa-check"></i> Unlimited content gap reports</li>
-              <li><i className="fas fa-check"></i> Advanced SERP insights</li>
-              <li><i className="fas fa-check"></i> Priority support</li>
-              <li><i className="fas fa-check"></i> 5 website tracking</li>
-              <li><i className="fas fa-check"></i> PDF, HTML & Excel reports</li>
-              <li><i className="fas fa-check"></i> API access</li>
-              <li><i className="fas fa-check"></i> Competitor benchmarking</li>
-            </ul>
-            <button className="btn btn-primary" style={{ width: '100%' }} onClick={() => onSelectPlan('professional')}>
-              Get Started
-            </button>
-          </div>
-
-          {/* Enterprise Plan */}
-          <div className="pricing-card">
-            <h3>Enterprise</h3>
-            <div className="price">$299<span>/month</span></div>
-            <p style={{ color: '#666', marginBottom: '1.5rem' }}>For large teams with advanced needs</p>
-            <ul className="pricing-features">
-              <li><i className="fas fa-check"></i> Unlimited keyword analyses</li>
-              <li><i className="fas fa-check"></i> Unlimited content gap reports</li>
-              <li><i className="fas fa-check"></i> Premium SERP insights</li>
-              <li><i className="fas fa-check"></i> 24/7 dedicated support</li>
-              <li><i className="fas fa-check"></i> Unlimited website tracking</li>
-              <li><i className="fas fa-check"></i> All export formats</li>
-              <li><i className="fas fa-check"></i> Advanced API access</li>
-              <li><i className="fas fa-check"></i> White-label reports</li>
-              <li><i className="fas fa-check"></i> Custom integrations</li>
-              <li><i className="fas fa-check"></i> Dedicated account manager</li>
-            </ul>
-            <button className="btn btn-primary" style={{ width: '100%' }} onClick={() => onSelectPlan('enterprise')}>
-              Contact Sales
-            </button>
-          </div>
-        </div>
-
-        <p style={{ textAlign: 'center', marginTop: '3rem', opacity: 0.9 }}>
-          All plans include a 14-day free trial. No credit card required.
+        <h1 style={{ fontSize: '4.5rem', fontWeight: '900', letterSpacing: '-0.03em', lineHeight: '1.1', marginBottom: '2rem', background: 'linear-gradient(to bottom, #fff 40%, rgba(255,255,255,0.5))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+          Algorithmic Dominance<br />Powered by Automated SEO
+        </h1>
+        <p style={{ fontSize: '1.25rem', color: 'var(--text-muted)', maxWidth: '800px', margin: '0 auto 3rem auto', lineHeight: '1.6' }}>
+          Experience the next generation of SEO intelligence. Our proprietary AI engine identifies hidden keyword clusters, maps competitor neural gaps, and predicts ranking velocity with 94% accuracy.
         </p>
+        <div style={{ display: 'flex', gap: '1.5rem', justifyContent: 'center' }}>
+          <button className="btn-primary" onClick={onOpenRegister} style={{ padding: '1rem 3rem', fontSize: '1.1rem' }}>
+            Initialize Free Trial
+          </button>
+          <button className="btn-secondary" onClick={scrollToPricing} style={{ padding: '1rem 3rem', fontSize: '1.1rem' }}>
+            Analyze Plans
+          </button>
+        </div>
+      </section>
+
+      {/* Features Grid */}
+      <section id="features" style={{ padding: '6rem 2rem' }}>
+        <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: '5rem' }}>
+            <h2 style={{ fontSize: '2.5rem', fontWeight: '800', marginBottom: '1rem' }}>Automated Seo Architecture</h2>
+            <p style={{ color: 'var(--text-muted)', fontSize: '1.1rem' }}>Proprietary technologies built for technical SEO elites.</p>
+          </div>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '2.5rem' }}>
+            {[
+              { icon: 'fa-microchip', title: 'Cognitive Clustering', desc: 'Neural networks automatically group thousands of keywords into high-intent thematic silos.' },
+              { icon: 'fa-shield-halved', title: 'Competitor Stealth Audit', desc: 'Bypass advanced bot protection to map the exact technical blueprint of any market competitor.' },
+              { icon: 'fa-chart-line', title: 'Velocity Prediction', desc: 'Proprietary machine learning models that predict ranking timeframes based on keyword difficulty.' },
+              { icon: 'fa-wand-magic-sparkles', title: 'Semantic Gap Solver', desc: 'AI-driven content generation strategy designed to fill information gaps identified in SERP results.' },
+              { icon: 'fa-bolt', title: 'Real-time Neural Pulse', desc: 'Instant feedback on technical health, mobile performance, and core web vital bottlenecks.' },
+              { icon: 'fa-file-shield', title: 'Enterprise Encryption', desc: 'Bank-grade security for your proprietary SEO data and intelligence archives.' }
+            ].map((f, i) => (
+              <div key={i} className="card table-row-hover" style={{ padding: '3rem 2.5rem', border: '1px solid rgba(255,255,255,0.03)' }}>
+                <div style={{ width: '56px', height: '56px', borderRadius: '16px', background: 'rgba(99, 102, 241, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '2rem' }}>
+                  <i className={`fas ${f.icon}`} style={{ fontSize: '1.5rem', color: 'var(--primary)' }}></i>
+                </div>
+                <h3 style={{ fontSize: '1.3rem', fontWeight: '700', marginBottom: '1rem' }}>{f.title}</h3>
+                <p style={{ color: 'var(--text-muted)', lineHeight: '1.7', fontSize: '0.95rem' }}>{f.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Pricing - Cosmic Grid */}
+      <section id="pricing" style={{ padding: '8rem 2rem', background: 'rgba(255,255,255,0.01)' }}>
+        <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: '5rem' }}>
+            <h2 style={{ fontSize: '2.5rem', fontWeight: '800', marginBottom: '1rem' }}>Investment Protocol</h2>
+            <p style={{ color: 'var(--text-muted)', fontSize: '1.1rem' }}>Scalable intelligence for agencies and enterprise teams.</p>
+          </div>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '3rem' }}>
+            {[
+              { 
+                plan: 'Identity', price: '29', desc: 'Perfect for individual neural analysts.',
+                features: ['10 Neural Analyses', '5 Content Gaps', 'Basic SERP Insights', 'PDF Archives']
+              },
+              { 
+                plan: 'Protocol', price: '99', desc: 'Our most popular agency configuration.', popular: true,
+                features: ['100 Neural Analyses', 'Unlimited Gaps', 'Advanced API Access', 'Velocity Prediction', 'Priority Neural Support']
+              },
+              { 
+                plan: 'Nexus', price: '299', desc: 'Enterprise-grade intelligence hub.',
+                features: ['Infinite Analyses', 'Full API Access', 'Custom Integrations', 'Dedicated Neural Analyst', 'White-label Intelligence']
+              }
+            ].map((p, i) => (
+              <div key={i} className="card" style={{ 
+                padding: '3.5rem 3rem', 
+                border: p.popular ? '2px solid var(--primary)' : '1px solid rgba(255,255,255,0.05)',
+                background: p.popular ? 'linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(15, 23, 42, 0.8))' : 'rgba(255,255,255,0.02)',
+                position: 'relative'
+              }}>
+                {p.popular && <div style={{ position: 'absolute', top: '20px', right: '20px', background: 'var(--primary)', color: '#fff', padding: '0.4rem 1rem', borderRadius: '20px', fontSize: '0.75rem', fontWeight: '800' }}>MOST POPULAR</div>}
+                <h3 style={{ fontSize: '1.5rem', fontWeight: '800', marginBottom: '1rem' }}>{p.plan}</h3>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem', marginBottom: '1rem' }}>
+                  <span style={{ fontSize: '3rem', fontWeight: '900' }}>${p.price}</span>
+                  <span style={{ color: 'var(--text-muted)' }}>/ month</span>
+                </div>
+                <p style={{ color: 'var(--text-muted)', marginBottom: '2.5rem', fontSize: '0.9rem' }}>{p.desc}</p>
+                <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 3rem 0', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  {p.features.map((f, j) => (
+                    <li key={j} style={{ fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                      <i className="fas fa-check-circle" style={{ color: p.popular ? 'var(--accent)' : 'var(--primary)' }}></i>
+                      {f}
+                    </li>
+                  ))}
+                </ul>
+                <button className={p.popular ? 'btn-primary' : 'btn-secondary'} style={{ width: '100%', padding: '1rem' }} onClick={() => onSelectPlan(p.plan.toLowerCase())}>
+                  Initialize Nexus
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
       </section>
 
       {/* Footer */}
-      <div style={{ background: 'rgba(0,0,0,0.2)', padding: '2rem', textAlign: 'center', color: 'white' }}>
-        <p>&copy; 2025 SEO Insights. All rights reserved.</p>
-      </div>
+      <footer style={{ padding: '4rem 2rem', borderTop: '1px solid rgba(255,255,255,0.05)', textAlign: 'center' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '0.75rem', fontSize: '1.25rem', fontWeight: '800', marginBottom: '1.5rem', opacity: 0.5 }}>
+          <i className="fas fa-brain"></i>
+          Automated SEO Insights
+        </div>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>&copy; 2026 Automated AI Intelligence. All protocols secured.</p>
+      </footer>
     </div>
   );
 };
