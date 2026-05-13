@@ -28,6 +28,55 @@ const STOP_WORDS = new Set([
   'my','his','her','its','us','them','me','him','her'
 ]);
 
+const STRUCTURAL_KEYWORDS = new Set([
+  'contents', 'references', 'etymology', 'further reading', 'external links', 'navigation', 
+  'search', 'footer', 'header', 'menu', 'sidebar', 'wikipedia', 'britannica', 'dictionary',
+  'see also', 'main article', 'related topics', 'jump to', 'top of page', 'skip to',
+  'list', 'noun', 'verb', 'adjective', 'definition', 'meaning', 'pronunciation', 'usage',
+  'also', 'see', 'discussed', 'discuss', 'articles', 'article', 'browse', 'plus', 'learn',
+  'translations', 'translation', 'collocations', 'collocation', 'example', 'examples',
+  'cambridge', 'oxford', 'merriam', 'webster', 'thesaurus', 'synonyms', 'antonyms',
+  'popular', 'features', 'acknowledgements', 'acknowledgment', 'copyright', 'rights',
+  'reserved', 'privacy', 'terms', 'contact', 'about', 'login', 'signup', 'register',
+  'facebook', 'instagram', 'twitter', 'linkedin', 'youtube', 'pinterest', 'tiktok',
+  'follow', 'share', 'subscribe', 'newsletter', 'cookies', 'policy', 'settings'
+]);
+
+function isJunkKeyword(kw) {
+  const lower = kw.toLowerCase().trim();
+  if (lower.length < 3) return true;
+  
+  // 1. Structural/Dictionary Noise
+  if (STRUCTURAL_KEYWORDS.has(lower)) return true;
+  
+  const words = lower.split(/\s+/);
+  if (words.some(w => STRUCTURAL_KEYWORDS.has(w))) return true;
+
+  // 2. Concatenation and Social Media Patterns
+  for (const word of words) {
+    if (word.length > 20) return true;
+    if (/(facebook|instagram|twitter|linkedin|youtube|pinterest|tiktok|follow|login|signup|copyright|dictionary|meanings|definitions)/i.test(word) && word.length > 10) {
+      return true;
+    }
+    // Junk character check
+    if (/[^a-z0-9\s]{2,}/i.test(word)) return true;
+  }
+
+  // 3. UI and Structural Patterns
+  if (/^[0-9\W]+$/.test(lower)) return true; 
+  if (words.length > 6) return true; 
+  
+  if (/\b(cambridge|oxford|merriam|webster|thesaurus|grammar|thesaurus|corpus|dictionary|meanings|english|translations|definitions|pronunciation|synonyms|antonyms|etymology)\b/.test(lower)) return true;
+  if (/\b(browse|popular|features|acknowledgements|rights reserved|privacy policy|terms of use)\b/.test(lower)) return true;
+
+  // 4. Repetitive Word Check (e.g., 'modification modification')
+  const uniqueWords = new Set(words);
+  if (words.length > 1 && uniqueWords.size === 1) return true;
+
+  return false;
+}
+
+
 // ─── Model loading (shared Promise — no polling race condition) ───────────────
 
 let embeddingModel = null;
@@ -108,33 +157,39 @@ function extractPhrasesFromCompetitors(competitorData, baseKeyword) {
 
   competitorData.forEach((comp, idx) => {
     const el = comp.elements || {};
-    const textBlocks = [
-      el.title || '',
-      el.metaDescription || '',
-      ...(el.h1Tags || []),
-      ...(el.h2Tags || []),
-      ...(el.h3Tags || [])
-    ].join(' ');
+    
+    // Priority 1: High Value Tags (H1, Title) - Weight = 3
+    const priorityText = [el.title || '', ...(el.h1Tags || [])].join(' ');
+    // Priority 2: Secondary Tags (H2, H3, Meta) - Weight = 1
+    const normalText = [el.metaDescription || '', ...(el.h2Tags || []), ...(el.h3Tags || [])].join(' ');
 
-    const tokens = tokenize(textBlocks);
-    if (tokens.length < 2) return;
+    const processText = (text, weight) => {
+      const tokens = tokenize(text);
+      if (tokens.length < 2) return;
 
-    // Extract 2, 3, 4-grams
-    for (let n = 2; n <= 4; n++) {
-      const grams = ngramsFromTokens(tokens, n);
-      grams.forEach((count, phrase) => {
-        // Only keep phrases that share at least one token with the base keyword
-        const phraseTokens = phrase.split(' ');
-        const hasOverlap = phraseTokens.some(pt => baseTokens.includes(pt)) ||
-                           phrase.includes(baseKeyword.toLowerCase());
-        if (!hasOverlap) return;
+      for (let n = 2; n <= 3; n++) {
+        const grams = ngramsFromTokens(tokens, n);
+        grams.forEach((count, phrase) => {
+          if (isJunkKeyword(phrase)) return;
 
-        const existing = phraseMap.get(phrase) || { count: 0, competitors: new Set() };
-        existing.count += count;
-        existing.competitors.add(comp.url || `comp-${idx}`);
-        phraseMap.set(phrase, existing);
-      });
-    }
+          // STRICT OVERLAP: It must contain at least one word from the base keyword
+          const phraseTokens = phrase.split(' ');
+          const hasOverlap = phraseTokens.some(pt => baseTokens.includes(pt)) || 
+                             phrase.includes(baseKeyword.toLowerCase());
+          
+          if (!hasOverlap) return; 
+
+          const existing = phraseMap.get(phrase) || { score: 0, competitors: new Set(), totalCount: 0 };
+          existing.score += (count * weight);
+          existing.totalCount += count;
+          existing.competitors.add(comp.url || `comp-${idx}`);
+          phraseMap.set(phrase, existing);
+        });
+      }
+    };
+
+    processText(priorityText, 3);
+    processText(normalText, 1);
   });
 
   return phraseMap;
@@ -151,7 +206,10 @@ function getPatternSupplement(baseKeyword) {
     `how to ${kw}`, `${kw} for beginners`, `${kw} strategies`,
     `${kw} examples`, `${kw} tutorial`, `what is ${kw}`,
     `${kw} review`, `${kw} comparison`, `${kw} software`,
-    `${kw} checklist`, `${kw} best practices`
+    `${kw} checklist`, `${kw} best practices`,
+    `${kw} trends 2024`, `advanced ${kw} techniques`,
+    `professional ${kw} solutions`, `${kw} implementation`,
+    `top rated ${kw}`, `${kw} benefits`
   ];
 }
 
@@ -214,72 +272,82 @@ function estimateDifficulty(competitorCount, wordCount, relevanceScore) {
 // ─── Core semantic keyword research ──────────────────────────────────────────
 
 async function performSemanticKeywordResearch(baseKeyword, competitorData) {
-  console.log(`[KeywordService] Semantic research for: "${baseKeyword}"`);
+  console.log(`[Deep Research] Processing Semantic Engine for: "${baseKeyword}"`);
 
   const baseEmbedding = await generateEmbedding(baseKeyword);
-
-  // 1. Real phrases from competitor content
   const phraseMap = extractPhrasesFromCompetitors(competitorData, baseKeyword);
-  console.log(`[KeywordService] Extracted ${phraseMap.size} real competitor phrases`);
+  const totalCompetitors = competitorData.length || 1;
 
-  // 2. Supplement with patterns (but only add those not already found)
-  const patterns = getPatternSupplement(baseKeyword);
-  patterns.forEach(p => {
-    if (!phraseMap.has(p)) {
-      phraseMap.set(p, { count: 1, competitors: new Set(['pattern']) });
-    }
-  });
-
+  // 1. Gather all unique phrases
   const allPhrases = Array.from(phraseMap.keys());
   const suggestions = [];
 
-  // 3. Score each phrase with semantic similarity, process in batches
-  const batchSize = 10;
+  // 2. Multi-Stage Scoring (Semantic + Market Authority)
+  const batchSize = 15;
   for (let i = 0; i < allPhrases.length; i += batchSize) {
     const batch = allPhrases.slice(i, i + batchSize);
     const embeddings = await Promise.all(batch.map(p => generateEmbedding(p)));
 
     batch.forEach((phrase, bi) => {
-      const sim = cosineSimilarity(baseEmbedding, embeddings[bi]);
-      const relevanceScore = Math.round(sim * 100);
-
-      if (sim < 0.25) return; // filter out irrelevant phrases
-
       const data = phraseMap.get(phrase);
+      const sim = cosineSimilarity(baseEmbedding, embeddings[bi]);
       const wordCount = phrase.split(' ').length;
+
+      // SEMANTIC GUARDRAIL: Strong prune of irrelevant dictionary/UI junk
+      if (sim < 0.45 && !phrase.includes(baseKeyword.toLowerCase())) return;
+
+      // MARKET AUTHORITY: How many competitors use this as a target?
+      const marketPresence = data.competitors.size;
+      const marketScore = (marketPresence / totalCompetitors) * 100;
+      
+      // Calculate Weighted Relevance
+      // (Presence on multiple sites is a HUGE signal of a "real" SEO keyword)
+      const weight = marketPresence > 1 ? 1.2 : 1.0;
+      const relevanceScore = Math.round(((sim * 60) + (marketScore * 40)) * weight);
+
+      if (relevanceScore < 30) return;
 
       suggestions.push({
         keyword: phrase,
-        type: wordCount >= 3 ? 'long-tail' : 'short-tail',
         intent: classifyIntentLocal(phrase),
-        relevanceScore: Math.max(25, relevanceScore),
-        estimatedDifficulty: estimateDifficulty(data.competitors.size, wordCount, relevanceScore),
-        competitorCount: data.competitors.size,
-        occurrences: data.count,
-        isFromCompetitors: !data.competitors.has('pattern'), // flag: real vs pattern
-        sources: [] // sources stripped — url list was noisy in v1
+        relevanceScore: Math.min(100, relevanceScore),
+        estimatedDifficulty: estimateDifficulty(marketPresence, wordCount, relevanceScore),
+        marketPresence,
+        isFromCompetitors: true
       });
     });
   }
 
   suggestions.sort((a, b) => b.relevanceScore - a.relevanceScore);
   
-  const finalSuggestions = suggestions.slice(0, 50);
-  console.log(`[KeywordService] Fetching real Google Trends data for top 10 suggestions...`);
-  
-  for (let i = 0; i < finalSuggestions.length; i++) {
-    const fallback = Math.max(10, Math.round(finalSuggestions[i].relevanceScore * 0.75));
-    if (i < 5) { // Only try top 5 to avoid blocking
-      const realScore = await fetchTrendScore(finalSuggestions[i].keyword);
-      finalSuggestions[i].trendScore = (realScore && realScore > 0) ? realScore : fallback;
-      await new Promise(r => setTimeout(r, 800)); 
-    } else {
-      finalSuggestions[i].trendScore = fallback;
-    }
-  }
+  // 3. Final Polish & Strategy Generation
+  const finalResults = suggestions
+    .filter(s => !isJunkKeyword(s.keyword))
+    .slice(0, 50)
+    .map(s => ({
+      ...s,
+      strategy: generateStrategy(s.keyword, s.intent),
+      actionPlan: getActionPlan(s.relevanceScore, s.estimatedDifficulty)
+    }));
 
-  console.log(`[KeywordService] Generated ${finalSuggestions.length} suggestions (Top 10 with Real Trends)`);
-  return finalSuggestions;
+  return finalResults;
+}
+
+function generateStrategy(keyword, intent) {
+  const kw = keyword.toLowerCase();
+  if (intent === 'transactional') return `Optimize product pages for "${keyword}" to drive conversions.`;
+  if (intent === 'commercial') return `Create comparison content or reviews targeting "${keyword}".`;
+  if (intent === 'navigational') return `Ensure clear brand presence and site structure for "${keyword}".`;
+  if (kw.includes('best') || kw.includes('top')) return `Listicle or "Top 10" style content for "${keyword}".`;
+  if (kw.includes('how') || kw.includes('tutorial')) return `Step-by-step guide or video content for "${keyword}".`;
+  return `Develop educational blog content focusing on "${keyword}" topics.`;
+}
+
+function getActionPlan(relevance, difficulty) {
+  if (relevance > 80 && difficulty === 'Easy') return 'Immediate Priority';
+  if (relevance > 60 && difficulty !== 'Hard') return 'High Priority';
+  if (difficulty === 'Easy') return 'Quick Win';
+  return 'Long-term Growth';
 }
 
 // ─── Fallback (when no competitor data available) ─────────────────────────────
@@ -313,18 +381,12 @@ async function generateFallbackSuggestions(baseKeyword) {
     }
 
     suggestions.sort((a, b) => b.relevanceScore - a.relevanceScore);
-    const finalSuggestions = suggestions.slice(0, 50);
+    const finalSuggestions = suggestions.slice(0, 50).map(s => ({
+      ...s,
+      strategy: generateStrategy(s.keyword, s.intent),
+      actionPlan: getActionPlan(s.relevanceScore, s.estimatedDifficulty)
+    }));
     
-    for (let i = 0; i < finalSuggestions.length; i++) {
-      const fallback = Math.max(10, Math.round(finalSuggestions[i].relevanceScore * 0.7));
-      if (i < 5) {
-        const realScore = await fetchTrendScore(finalSuggestions[i].keyword);
-        finalSuggestions[i].trendScore = (realScore && realScore > 0) ? realScore : fallback;
-        await new Promise(r => setTimeout(r, 800));
-      } else {
-        finalSuggestions[i].trendScore = fallback;
-      }
-    }
     return finalSuggestions;
   } catch (err) {
     console.error('[KeywordService] Fallback generation failed:', err.message);
@@ -393,25 +455,16 @@ async function performContextualResearch(baseKeyword, url) {
       });
     }
 
-    // 4. Also add patterns for extra depth
-    const patterns = getPatternSupplement(baseKeyword);
-    patterns.forEach(p => {
-      if (suggestions.length < 50 && !suggestions.some(s => s.keyword === p)) {
-        suggestions.push({
-          keyword: p,
-          type: p.split(' ').length >= 3 ? 'long-tail' : 'short-tail',
-          intent: classifyIntentLocal(p),
-          relevanceScore: 50,
-          estimatedDifficulty: 'Medium',
-          competitorCount: 0,
-          occurrences: 0,
-          isFromCompetitors: false,
-          trendScore: 30
-        });
-      }
-    });
 
-    return suggestions.sort((a, b) => b.relevanceScore - a.relevanceScore);
+
+    return suggestions
+      .filter(s => !isJunkKeyword(s.keyword))
+      .sort((a, b) => b.relevanceScore - a.relevanceScore)
+      .map(s => ({
+        ...s,
+        strategy: generateStrategy(s.keyword, s.intent),
+        actionPlan: getActionPlan(s.relevanceScore, s.estimatedDifficulty)
+      }));
   } catch (err) {
     console.error('[KeywordService] Contextual research failed:', err.message);
     return generateFallbackSuggestions(baseKeyword);
@@ -424,5 +477,6 @@ module.exports = {
   performContextualResearch,
   extractPhrasesFromCompetitors,
   estimateDifficulty,
-  classifyIntentLocal
+  classifyIntentLocal,
+  isJunkKeyword
 };

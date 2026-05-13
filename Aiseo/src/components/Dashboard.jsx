@@ -48,25 +48,25 @@ const Dashboard = ({ currentUser, authToken, API_BASE_URL, onNavigate }) => {
       trend: dashboardData.latestAudit?.scoreTrend || ''
     },
     {
-      label: 'Ranking Keywords',
-      value: dashboardData.latestAudit ? dashboardData.latestAudit.rankingKeywords.toLocaleString() : '0',
-      icon: 'fa-key',
-      color: '#6366f1',
-      trend: dashboardData.latestAudit?.rankingKeywordsTrend || ''
+      label: 'Technical Issues',
+      value: dashboardData.latestAudit ? dashboardData.latestAudit.issuesCount : '0',
+      icon: 'fa-exclamation-triangle',
+      color: '#ef4444',
+      trend: 'Issues'
     },
     {
-      label: 'Total Backlinks',
-      value: dashboardData.latestAudit ? dashboardData.latestAudit.totalBacklinks.toLocaleString() : '0',
-      icon: 'fa-link',
+      label: 'Link Architecture',
+      value: dashboardData.latestAudit ? `${dashboardData.latestAudit.linkCount}` : '0',
+      icon: 'fa-network-wired',
       color: '#06b6d4',
-      trend: dashboardData.latestAudit?.totalBacklinksTrend || ''
+      trend: 'Links'
     },
     {
-      label: 'Monthly Traffic',
-      value: dashboardData.latestAudit ? dashboardData.latestAudit.monthlyTraffic : '0',
-      icon: 'fa-users',
+      label: 'Content Depth',
+      value: dashboardData.latestAudit ? `${dashboardData.latestAudit.wordCount}` : '0',
+      icon: 'fa-file-alt',
       color: '#f59e0b',
-      trend: dashboardData.latestAudit?.monthlyTrafficTrend || ''
+      trend: 'Words'
     },
   ];
 
@@ -142,12 +142,17 @@ const Dashboard = ({ currentUser, authToken, API_BASE_URL, onNavigate }) => {
               <div className="stat-value-group">
                 <span className="stat-value">{stat.value}</span>
                 <span className="stat-trend" style={{ color: stat.trend.startsWith('+') ? '#10b981' : '#ef4444' }}>
-                  {stat.trend}
-                </span>
-              </div>
-            </div>
-          </div>
-        ))}
+                   {stat.trend}
+                 </span>
+               </div>
+               {dashboardData.latestAudit?.isEstimate && index >= 2 && (
+                 <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: '0.2rem', opacity: 0.7 }}>
+                   <i className="fas fa-info-circle"></i> Market Estimate
+                 </div>
+               )}
+             </div>
+           </div>
+         ))}
       </div>
 
       <div className="dashboard-grid">

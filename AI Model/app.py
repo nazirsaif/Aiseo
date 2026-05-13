@@ -303,42 +303,52 @@ def compare_sites():
     # 2. Content & Topical Depth
     own_words = own_data.get('content_length', 0)
     comp_words = comp_data.get('content_length', 0)
-    if comp_words > own_words + 100: # Lowered threshold
+    if own_words > comp_words + 200:
+        reasons.append(f"Authority Edge: Your content depth is significantly superior ({own_words} vs {comp_words} words), creating a high barrier to entry.")
+    elif comp_words > own_words + 100:
         reasons.append(f"Content Gap: Competitor has {comp_words} words vs your {own_words}. Search engines favor comprehensive topical depth.")
-    elif own_words > comp_words + 1000:
-        reasons.append("Authority Edge: Your content depth is significantly superior, creating a high barrier to entry.")
     
     # 3. Heading Hierarchy (H2 & H3)
     own_h2 = len(own_data.get('h2Tags', []))
     comp_h2 = len(comp_data.get('h2Tags', []))
-    if comp_h2 > own_h2:
+    if own_h2 > comp_h2 + 2:
+        reasons.append(f"Structural Advantage: You use more H2 subheadings ({own_h2} vs {comp_h2}), creating a better outline for indexers.")
+    elif comp_h2 > own_h2:
         reasons.append(f"Semantic Structure: Competitor uses more H2 subheadings ({comp_h2} vs {own_h2}), creating a better outline for indexers.")
     
     own_h3 = own_data.get('h3Count', 0)
     comp_h3 = comp_data.get('h3Count', 0)
-    if comp_h3 > own_h3 + 3:
+    if own_h3 > comp_h3 + 2:
+        reasons.append(f"Granular Leadership: You leverage H3 tiers better for topic clustering ({own_h3} vs {comp_h3}).")
+    elif comp_h3 > own_h3 + 3:
         reasons.append(f"Granular Depth: Competitor leverages H3 tiers for better topic clustering ({comp_h3} vs {own_h3}).")
 
     # 4. Link Architecture
     own_links = own_data.get('num_internal_links', 0)
     comp_links = comp_data.get('num_internal_links', 0)
-    if comp_links > own_links + 5: # Lowered threshold
-        reasons.append(f"Link Density: Competitor has a more interconnected internal architecture ({comp_links} links), distributing PageRank more effectively.")
-    elif own_links > comp_links + 15:
-        reasons.append("Navigation Edge: Your internal linking is robust, helping users and crawlers discover deeper pages faster.")
+    if own_links > comp_links + 15:
+        reasons.append(f"Navigation Edge: Your internal linking is robust ({own_links} vs {comp_links} links), helping users discover pages faster.")
+    elif comp_links > own_links + 5:
+        reasons.append(f"Link Density: Competitor has a more interconnected architecture ({comp_links} vs {own_links} links), distributing PageRank more effectively.")
 
     # 5. Media & Visual Engagement
     own_imgs = own_data.get('imageCount', 0)
     comp_imgs = comp_data.get('imageCount', 0)
-    if comp_imgs > own_imgs:
-        reasons.append(f"Media Richness: Competitor uses more images, which correlates with better user engagement and 'time on page' signals.")
+    if own_imgs > comp_imgs + 3:
+        reasons.append(f"Media Advantage: You use more images ({own_imgs} vs {comp_imgs}), correlating with higher user engagement.")
+    elif comp_imgs > own_imgs:
+        reasons.append(f"Media Richness: Competitor uses more images ({comp_imgs} vs {own_imgs}), which improves 'time on page' signals.")
     
     if own_data.get('imagesWithoutAlt', 0) > 0:
         reasons.append(f"Accessibility Gap: You have {own_data.get('imagesWithoutAlt')} images missing alt text. Competitors with better accessibility often rank higher.")
 
     # 6. Authority & Technical Performance
-    if comp_data.get('domain_authority', 0) > own_data.get('domain_authority', 0):
-        reasons.append(f"Trust Signal: Competitor domain authority is higher. They likely have a more established backlink profile.")
+    own_da = own_data.get('domain_authority', 0)
+    comp_da = comp_data.get('domain_authority', 0)
+    if own_da > comp_da:
+        reasons.append("Trust Leadership: Your domain authority is higher. You likely have a more established backlink profile.")
+    elif comp_da > own_da:
+        reasons.append("Trust Signal: Competitor domain authority is higher. They likely have a more established backlink profile.")
     
     own_scripts = own_data.get('omni_script_count', 0)
     comp_scripts = comp_data.get('omni_script_count', 0)
@@ -346,7 +356,9 @@ def compare_sites():
         reasons.append("Performance Risk: Your page has significantly more tracking scripts than the competitor, which may impact Core Web Vitals.")
 
     # 7. Overall Health Comparison
-    if len(comp_issues) < len(own_issues):
+    if len(own_issues) < len(comp_issues):
+        reasons.append(f"Technical Leadership: Your page has fewer flags ({len(own_issues)} vs {len(comp_issues)}). A 'cleaner' site is a stronger ranking signal.")
+    elif len(comp_issues) < len(own_issues):
         reasons.append(f"Technical Debt: Your page has {len(own_issues)} flags while the competitor has {len(comp_issues)}. A 'cleaner' site is a stronger ranking signal.")
         
     if not reasons:
@@ -364,8 +376,22 @@ def compare_sites():
             'social', 'media', 'follow', 'facebook', 'twitter', 'instagram', 'linkedin', 'youtube',
             'email', 'address', 'phone', 'number', 'call', 'today', 'free', 'get', 'started',
             'read', 'learn', 'details', 'check', 'out', 'view', 'all', 'latest', 'news', 'blog',
-            'posts', 'comments', 'posted', 'by', 'date', 'author', 'category', 'tags'
+            'posts', 'comments', 'posted', 'by', 'date', 'author', 'category', 'tags', 'department', 'departments'
         }
+        
+        import urllib.parse
+        def get_domain_tokens(url):
+            if not url: return []
+            try:
+                domain = urllib.parse.urlparse(url).netloc
+                # split by dots and dashes to get brand names (e.g., 'amazon', 'daraz', 'nust')
+                return [t for t in domain.replace('.', ' ').replace('-', ' ').split() if len(t) > 2]
+            except:
+                return []
+                
+        # Dynamically add competitor and own brand names to stop words to prevent brand leakage
+        dynamic_stops = get_domain_tokens(own_data.get('url')) + get_domain_tokens(comp_data.get('url'))
+        STOP_WORDS.update([s.lower() for s in dynamic_stops])
         
         def extract_weighted_keywords(site_data):
             if not site_data: return {}

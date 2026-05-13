@@ -6,6 +6,10 @@ const CompetitorAnalysis = ({ authToken, API_BASE_URL }) => {
   const [competitorUrl, setCompetitorUrl] = useState('');
   const [isComparing, setIsComparing] = useState(false);
   const [comparisonResult, setComparisonResult] = useState(null);
+  const [showManual, setShowManual] = useState(false);
+  const [ownHtml, setOwnHtml] = useState('');
+  const [compHtml, setCompHtml] = useState('');
+  const [scraperError, setScraperError] = useState(null);
 
 
   const runComparison = async () => {
@@ -15,7 +19,14 @@ const CompetitorAnalysis = ({ authToken, API_BASE_URL }) => {
     }
 
     setIsComparing(true);
+    setScraperError(null);
     setComparisonResult(null);
+
+    if (ownUrl.trim().toLowerCase() === competitorUrl.trim().toLowerCase()) {
+      setIsComparing(false);
+      setScraperError('You are trying to compare a website to itself. Please enter a different competitor URL to see a meaningful gap analysis.');
+      return;
+    }
 
     try {
       const res = await fetch(`${API_BASE_URL}/api/competitor/compare`, {
@@ -26,22 +37,23 @@ const CompetitorAnalysis = ({ authToken, API_BASE_URL }) => {
         },
         body: JSON.stringify({
           ownUrl: ownUrl.trim(),
-          competitorUrl: competitorUrl.trim()
+          competitorUrl: competitorUrl.trim(),
+          ownHtml: ownHtml.trim() || null,
+          compHtml: compHtml.trim() || null
         })
       });
 
       const data = await res.json();
       if (!res.ok) {
-        notification.error(data.message || 'Comparison failed');
-        return;
+        setScraperError(data.message || 'The website blocked our automated scanner.');
+        throw new Error(data.message || 'Comparison failed');
       }
 
       setComparisonResult(data);
       notification.success('Keyword analysis complete!');
     } catch (err) {
       console.error('Comparison error:', err);
-      const msg = err.response?.data?.message || err.message || 'Server connection failed.';
-      notification.error(msg);
+      if (!scraperError) notification.error('Failed to analyze websites');
     } finally {
       setIsComparing(false);
     }
@@ -53,10 +65,29 @@ const CompetitorAnalysis = ({ authToken, API_BASE_URL }) => {
         <h2 style={{ fontSize: '2.5rem', fontWeight: '800', marginBottom: '0.5rem', background: 'linear-gradient(to right, #fff, #94a3b8)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
           Competitor Analysis
         </h2>
-        <p style={{ color: 'var(--text-muted)', fontSize: '1.1rem' }}>Head-to-head neural comparison with real-time algorithmic insights.</p>
+        <p style={{ color: 'var(--text-muted)', fontSize: '1.1rem' }}>Head-to-head comparison of SEO performance and technical architecture.</p>
+        
+        <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'rgba(6, 182, 212, 0.05)', borderRadius: '12px', border: '1px solid rgba(6, 182, 212, 0.1)' }}>
+          <h4 style={{ fontSize: '0.9rem', color: 'var(--secondary)', marginBottom: '0.5rem' }}><i className="fas fa-microchip"></i> Neural Intelligence Lab</h4>
+          <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: 0, lineHeight: '1.5' }}>
+            Our engine performs a side-by-side technical audit of both sites. We compare word count, tag structure, and media density to calculate a relative performance score. The "Neural Comparison Insights" explain exactly why a competitor might be outranking you.
+          </p>
+        </div>
       </div>
 
       {/* Comparison Input Bar */}
+      {scraperError && (
+        <div className="card" style={{ marginBottom: '2rem', border: '1px solid #ef4444', background: 'rgba(239, 68, 68, 0.05)' }}>
+          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', color: '#f87171' }}>
+            <i className="fas fa-exclamation-triangle" style={{ fontSize: '1.5rem' }}></i>
+            <div>
+              <h4 style={{ margin: 0, color: '#fff' }}>Scraper Restricted: Automated Access Blocked</h4>
+              <p style={{ margin: '0.2rem 0 0', fontSize: '0.9rem' }}>{scraperError}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="card" style={{ marginBottom: '3rem', border: '1px solid rgba(255,255,255,0.1)' }}>
         <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: '300px' }}>
@@ -95,7 +126,8 @@ const CompetitorAnalysis = ({ authToken, API_BASE_URL }) => {
             {isComparing ? ' Analyzing...' : ' Start Research'}
           </button>
         </div>
-      </div>
+
+    </div>
 
       {comparisonResult && (
         <div className="analysis-results">
@@ -125,6 +157,13 @@ const CompetitorAnalysis = ({ authToken, API_BASE_URL }) => {
               </div>
             </div>
           </div>
+
+          {comparisonResult.competitor?.isLikelyBlocked && (
+            <div style={{ marginBottom: '2rem', padding: '1rem', background: 'rgba(244, 63, 94, 0.1)', borderRadius: '12px', border: '1px solid rgba(244, 63, 94, 0.2)', color: '#f43f5e', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <i className="fas fa-shield-halved"></i>
+              <span><strong>Security Shield Detected:</strong> This competitor site restricted our crawler. Technical metrics (Word Count, H1) are likely under-reported.</span>
+            </div>
+          )}
 
           {/* Ranking Insights */}
           <div className="card" style={{ background: 'rgba(255,255,255,0.02)', padding: '2rem' }}>

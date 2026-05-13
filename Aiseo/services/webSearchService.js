@@ -267,9 +267,91 @@ function generateKeywordBasedCompetitors(keyword, maxResults) {
   return results;
 }
 
+/**
+ * Fetch real visibility data for a domain from search results
+ * Returns { indexedPages: number, mentions: number }
+ */
+async function getDomainIntelligence(url) {
+  try {
+    let domain = '';
+    try {
+      const urlObj = new URL(url.startsWith('http') ? url : `https://${url}`);
+      domain = urlObj.hostname.replace('www.', '');
+    } catch (e) {
+      domain = url.replace(/https?:\/\//, '').split('/')[0].replace('www.', '');
+    }
+
+    console.log(`\n=== Domain Intelligence for: "${domain}" ===`);
+
+    // 1. Get Indexed Pages (site:domain.com)
+    const indexedPages = await fetchResultCount(`site:${domain}`);
+    
+    // 2. Get Mentions/Backlinks ("domain.com" -site:domain.com)
+    const mentions = await fetchResultCount(`"${domain}" -site:${domain}`);
+
+    console.log(`📊 Real Stats — Indexed: ${indexedPages.toLocaleString()}, Mentions: ${mentions.toLocaleString()}`);
+
+    return {
+      indexedPages,
+      mentions,
+      success: true
+    };
+  } catch (error) {
+    console.error(`[DomainIntelligence] Error: ${error.message}`);
+    return {
+      indexedPages: 0,
+      mentions: 0,
+      success: false
+    };
+  }
+}
+
+/**
+ * Fetch the "About X results" count from Google for a specific query
+ */
+async function fetchResultCount(query) {
+  try {
+    const searchQuery = encodeURIComponent(query);
+    const searchUrl = `https://www.google.com/search?q=${searchQuery}`;
+    
+    const headers = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Referer': 'https://www.google.com/'
+    };
+
+    const response = await axios.get(searchUrl, { headers, timeout: 15000 });
+    const html = response.data;
+    
+    // Pattern: id="result-stats">About 835,000,000 results
+    const match = html.match(/id="result-stats"[^>]*>([^<]+)/i);
+    if (match && match[1]) {
+      const text = match[1];
+      // Extract numbers and handle commas/periods
+      const countMatch = text.replace(/,/g, '').replace(/\./g, '').match(/(\d+)/);
+      if (countMatch) {
+        return parseInt(countMatch[0], 10);
+      }
+    }
+    
+    // Fallback: If result-stats is hidden or missing, try a simpler regex
+    const altMatch = html.match(/([\d,.]+)\s+results/i);
+    if (altMatch && altMatch[1]) {
+      return parseInt(altMatch[1].replace(/,/g, '').replace(/\./g, ''), 10);
+    }
+
+    return 0;
+  } catch (error) {
+    console.warn(`[fetchResultCount] Failed for "${query}": ${error.message}`);
+    return 0;
+  }
+}
+
 module.exports = {
   searchWebForCompetitors,
   searchDuckDuckGoHTML,
   searchGoogleHTML,
-  generateKeywordBasedCompetitors
+  generateKeywordBasedCompetitors,
+  getDomainIntelligence
 };

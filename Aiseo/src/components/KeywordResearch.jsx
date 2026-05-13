@@ -7,6 +7,8 @@ const KeywordResearch = ({ authToken, API_BASE_URL }) => {
   const [url, setUrl] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [results, setResults] = useState(null);
+  const [showManual, setShowManual] = useState(false);
+  const [htmlContent, setHtmlContent] = useState('');
 
   const handleResearch = async () => {
     if (!keyword.trim()) {
@@ -17,7 +19,8 @@ const KeywordResearch = ({ authToken, API_BASE_URL }) => {
     try {
       const response = await axios.post(`${API_BASE_URL}/api/keywords/research`, {
         baseKeyword: keyword.trim(),
-        url: url.trim() || null
+        url: url.trim() || null,
+        htmlContent: htmlContent.trim() || null
       }, {
         headers: { Authorization: `Bearer ${authToken}` }
       });
@@ -78,19 +81,7 @@ const KeywordResearch = ({ authToken, API_BASE_URL }) => {
               />
             </div>
           </div>
-          <div style={{ flex: 1, minWidth: '300px' }}>
-            <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '0.8rem', textTransform: 'uppercase' }}>Context URL (Optional)</label>
-            <div style={{ position: 'relative' }}>
-              <i className="fas fa-globe" style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--secondary)' }}></i>
-              <input 
-                type="text" 
-                placeholder="https://example.com" 
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                style={{ width: '100%', padding: '1rem 1rem 1rem 3rem' }}
-              />
-            </div>
-          </div>
+
           <button 
             className="btn-primary" 
             onClick={handleResearch}
@@ -101,6 +92,10 @@ const KeywordResearch = ({ authToken, API_BASE_URL }) => {
             {isSearching ? ' Researching...' : ' Generate Insights'}
           </button>
         </div>
+
+
+
+
       </div>
 
       {results && results.length > 0 && (
@@ -109,9 +104,9 @@ const KeywordResearch = ({ authToken, API_BASE_URL }) => {
             <thead>
               <tr style={{ background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid var(--border)' }}>
                 <th style={{ padding: '1.25rem 2rem', color: 'var(--text-muted)', fontSize: '0.8rem', textTransform: 'uppercase' }}>Keyword Phrase</th>
-                <th style={{ padding: '1.25rem 2rem', color: 'var(--text-muted)', fontSize: '0.8rem', textTransform: 'uppercase' }}>Relevance</th>
-                <th style={{ padding: '1.25rem 2rem', color: 'var(--text-muted)', fontSize: '0.8rem', textTransform: 'uppercase' }}>Difficulty (Competition)</th>
-                <th style={{ padding: '1.25rem 2rem', color: 'var(--text-muted)', fontSize: '0.8rem', textTransform: 'uppercase' }}>Trend Score</th>
+                <th style={{ padding: '1.25rem 2rem', color: 'var(--text-muted)', fontSize: '0.8rem', textTransform: 'uppercase' }}>Search Intent</th>
+                <th style={{ padding: '1.25rem 2rem', color: 'var(--text-muted)', fontSize: '0.8rem', textTransform: 'uppercase' }}>Content Strategy</th>
+                <th style={{ padding: '1.25rem 2rem', color: 'var(--text-muted)', fontSize: '0.8rem', textTransform: 'uppercase' }}>Action Plan</th>
               </tr>
             </thead>
             <tbody>
@@ -119,25 +114,32 @@ const KeywordResearch = ({ authToken, API_BASE_URL }) => {
                 <tr key={idx} style={{ borderBottom: '1px solid var(--border)', transition: 'background 0.3s' }} className="table-row-hover">
                   <td style={{ padding: '1.5rem 2rem', fontWeight: '600', color: 'var(--text-main)' }}>{res.keyword}</td>
                   <td style={{ padding: '1.5rem 2rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                      <div style={{ flex: 1, height: '6px', background: 'rgba(255,255,255,0.05)', borderRadius: '10px', maxWidth: '100px' }}>
-                        <div style={{ height: '100%', width: `${res.relevanceScore}%`, background: 'var(--primary)', borderRadius: '10px' }}></div>
-                      </div>
-                      <span style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--primary)' }}>{res.relevanceScore}%</span>
-                    </div>
+                    <span style={{ 
+                      textTransform: 'capitalize', 
+                      padding: '0.4rem 0.8rem', 
+                      borderRadius: '8px', 
+                      fontSize: '0.75rem', 
+                      fontWeight: '700',
+                      background: res.intent === 'transactional' ? 'rgba(16, 185, 129, 0.1)' : (res.intent === 'commercial' ? 'rgba(99, 102, 241, 0.1)' : 'rgba(6, 182, 212, 0.1)'),
+                      color: res.intent === 'transactional' ? '#10b981' : (res.intent === 'commercial' ? '#6366f1' : '#06b6d4')
+                    }}>
+                      {res.intent}
+                    </span>
+                  </td>
+                  <td style={{ padding: '1.5rem 2rem', fontSize: '0.9rem', color: 'var(--text-muted)', maxWidth: '300px' }}>
+                    {res.strategy}
                   </td>
                   <td style={{ padding: '1.5rem 2rem' }}>
-                    {getDifficultyClass(res.estimatedDifficulty) ? (
-                      <span className={`result-tag ${getDifficultyClass(res.estimatedDifficulty)}`}>
-                        {getDifficultyLabel(res.estimatedDifficulty)}
-                      </span>
-                    ) : null}
-                  </td>
-                  <td style={{ padding: '1.5rem 2rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: res.trendScore > 50 ? 'var(--accent)' : 'var(--text-muted)' }}>
-                      <i className={`fas ${res.trendScore > 50 ? 'fa-arrow-trend-up' : 'fa-minus'}`}></i>
-                      <span style={{ fontSize: '0.85rem', fontWeight: '600' }}>{res.trendScore}%</span>
-                    </div>
+                    <span style={{ 
+                      padding: '0.4rem 0.8rem', 
+                      borderRadius: '8px', 
+                      fontSize: '0.75rem', 
+                      fontWeight: '700',
+                      background: res.actionPlan === 'Immediate Priority' ? 'rgba(244, 63, 94, 0.1)' : (res.actionPlan === 'High Priority' ? 'rgba(245, 158, 11, 0.1)' : 'rgba(16, 185, 129, 0.1)'),
+                      color: res.actionPlan === 'Immediate Priority' ? '#f43f5e' : (res.actionPlan === 'High Priority' ? '#f59e0b' : '#10b981')
+                    }}>
+                      {res.actionPlan}
+                    </span>
                   </td>
                 </tr>
               ))}

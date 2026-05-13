@@ -149,7 +149,7 @@ const RegisterModal = ({ onClose, onSwitchToLogin, onRegister, API_BASE_URL }) =
         </form>
 
         <div className="auth-switch">
-          Already have an account? <a onClick={onSwitchToLogin}>Sign in</a>
+          Already have an account? <a onClick={onSwitchToLogin} style={{ cursor: 'pointer', color: '#6366f1', fontWeight: '600' }}>Sign in</a>
         </div>
       </div>
     </div>

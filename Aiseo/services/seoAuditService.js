@@ -3,6 +3,7 @@
  */
 const axios = require('axios');
 const cheerio = require('cheerio');
+const webSearchService = require('./webSearchService');
 
 // ─── Custom Machine Learning Model Integration ────────────────────────────────
 async function getMLModelPrediction(elements) {
@@ -66,11 +67,29 @@ async function getMLModelPrediction(elements) {
 async function performSEOAudit(url, htmlContent) {
   try {
     let html = htmlContent;
-    if (url && !html) html = await fetchHTMLFromURL(url);
+    if (url && !html) {
+      try {
+        html = await fetchHTMLFromURL(url);
+        verifyContentIntegrity(html, url); // Second pass after potential fallback
+      } catch (err) {
+        return {
+          success: false,
+          error: 'Bot Protection Active',
+          message: err.message || 'Website blocked our scanner. Please use Manual HTML Input.',
+          blocked: true
+        };
+      }
+    }
     if (!html) return { success: false, error: 'URL or HTML required.' };
 
     const elements = extractSEOElements(html);
     const mlAnalysis = await getMLModelPrediction(elements);
+    
+    // FETCH REAL DOMAIN STATS (Option 3 Implementation)
+    let domainStats = { indexedPages: 0, mentions: 0 };
+    if (url) {
+      domainStats = await webSearchService.getDomainIntelligence(url);
+    }
 
     if (!mlAnalysis.success) {
       return {
@@ -114,7 +133,10 @@ async function performSEOAudit(url, htmlContent) {
         ml_prediction: mlAnalysis.ranking_improved_prediction,
         ml_message: mlAnalysis.message,
         projected_score: mlAnalysis.projected_score,
-        ml_score: mlAnalysis.score
+        ml_score: mlAnalysis.score,
+        // Real Visibility Stats
+        indexedPages: domainStats.indexedPages,
+        mentions: domainStats.mentions
       }
     };
   } catch (error) {
@@ -190,6 +212,46 @@ function fleschReadingEase(text) {
   return Math.min(100, Math.max(0, score));
 }
 
+/**
+ * Validates that the fetched HTML is actually content and not a bot-protection screen.
+ * Analyzes DOM structure, script ratios, and common block titles.
+ */
+function verifyContentIntegrity(html, url) {
+  const $ = cheerio.load(html);
+  
+  const title = $('title').text().toLowerCase().trim();
+  const wordCount = $('body').text().split(/\s+/).filter(w => w.length > 0).length;
+  const scriptCount = $('script').length;
+  
+  // 1. Signature Block Titles
+  if (
+    title === 'just a moment...' || 
+    title.includes('attention required') || 
+    title.includes('security check') ||
+    title.includes('verify you are human') ||
+    title.includes('access denied') ||
+    title.includes('robot check')
+  ) {
+    throw new Error('Bot mitigation active: Detected block title signature.');
+  }
+
+  // 2. High Script/Low Text Ratio BUT only if it explicitly looks like a Cloudflare/Datadome challenge. 
+  // We cannot block all low-text sites because many are SPAs (React/Vue/Angular).
+  const isCloudflare = html.includes('cf-browser-verification') || html.includes('cf-challenge') || html.includes('captcha-bypass');
+  if (wordCount < 50 && scriptCount > 0 && isCloudflare) {
+    throw new Error('Bot mitigation active: Detected JS challenge (high script, low text).');
+  }
+
+  // 3. Empty Body Check (Relaxed for SPAs)
+  $('script, style, noscript').remove();
+  const cleanBodyText = $('body').text().trim();
+  if (cleanBodyText.length < 5 && isCloudflare) {
+    throw new Error('Bot mitigation active: Empty body structure detected alongside bot-protection scripts.');
+  }
+
+  return true;
+}
+
 async function fetchHTMLFromURL(url) {
   const https = require('https');
   const agent = new https.Agent({ rejectUnauthorized: false });
@@ -197,37 +259,78 @@ async function fetchHTMLFromURL(url) {
   const userAgents = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
     'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0'
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
   ];
 
   try {
     const response = await axios.get(url, {
       headers: {
-        'User-Agent': userAgents[0],
+        'User-Agent': userAgents[Math.floor(Math.random() * userAgents.length)],
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9',
         'Cache-Control': 'no-cache',
-        'Referer': 'https://www.google.com/'
+        'Pragma': 'no-cache',
+        'Sec-Ch-Ua': '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
+        'Sec-Ch-Ua-Mobile': '?0',
+        'Sec-Ch-Ua-Platform': '"Windows"',
+        'Upgrade-Insecure-Requests': '1',
+        'Referer': 'https://www.google.com/',
+        'X-Forwarded-For': `${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`,
+        'Cookie': 'session-id=123-4567890-1234567; i18n-prefs=USD;' // Mock cookie for e-commerce
       },
-      timeout: 35000,
+      timeout: 30000,
       maxRedirects: 10,
-      httpsAgent: agent // Bypass SSL issues for older gaming sites
+      httpsAgent: agent 
     });
+    
+    const lowerHTML = response.data.toLowerCase();
+    
+    // Check for common e-commerce block patterns
+    if (lowerHTML.includes('robot check') || lowerHTML.includes('captcha') || 
+        lowerHTML.includes('access denied') || lowerHTML.includes('security check') ||
+        (url.includes('amazon') && lowerHTML.includes('sorry, we just need to make sure you\'re not a robot'))) {
+      
+      console.warn(`[Scraper] Bot protection triggered on ${url}. Attempting final fallback...`);
+      
+      // Final attempt with a simple mobile UA and no extra headers
+      const simpleUA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1';
+      const lastResort = await axios.get(url, { 
+        headers: { 'User-Agent': simpleUA }, 
+        timeout: 15000, 
+        httpsAgent: agent,
+        validateStatus: false
+      });
+      
+      if (lastResort.status === 200 && lastResort.data.length > 5000) {
+        verifyContentIntegrity(lastResort.data, url);
+        return lastResort.data;
+      }
+
+      throw new Error(`Bot Mitigation Active: This website is protected by advanced security. Automated scraping is NOT possible for this URL. Please use the 'Manual HTML' option below to proceed.`);
+    }
+
+    verifyContentIntegrity(response.data, url);
     return response.data;
   } catch (err) {
     // Try one more time with Googlebot UA if the first one fails
     try {
       const retryResponse = await axios.get(url, {
-        headers: { 'User-Agent': userAgents[1] },
+        headers: { 
+          'User-Agent': userAgents[1],
+          'Accept': '*/*',
+          'Accept-Language': 'en-US,en;q=0.9'
+        },
         timeout: 20000,
         httpsAgent: agent
       });
       return retryResponse.data;
     } catch (retryErr) {
       if (retryErr.response && retryErr.response.status === 403) {
-        throw new Error(`Access Denied (403): This domain is protected. Please use the Manual HTML Audit tool.`);
+        throw new Error(`Access Denied (403): This domain is protected by strong anti-bot measures. Automated scraping is NOT possible. Please use the 'Manual HTML' option below.`);
       }
-      throw new Error(`Connection Failed: ${retryErr.message}. Ensure the URL is public.`);
+      throw new Error(`Scraper Blocked: ${retryErr.message}. This website restricts automated access. Please use the 'Manual HTML' option below.`);
     }
   }
 }

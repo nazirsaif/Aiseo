@@ -435,7 +435,12 @@ app.get('/api/dashboard/overview', auth, async (req, res) => {
         totalBacklinksTrend: latestAudit.totalBacklinksTrend || '+0%',
         monthlyTraffic: latestAudit.monthlyTraffic || '0',
         monthlyTrafficTrend: latestAudit.monthlyTrafficTrend || '+0%',
-        timestamp: latestAudit.createdAt
+        timestamp: latestAudit.createdAt,
+        // Authentic metrics for the 4 boxes
+        issuesCount: latestAudit.audit?.issuesCount || 0,
+        linkCount: latestAudit.elements?.linkCount || 0,
+        wordCount: latestAudit.elements?.wordCount || 0,
+        isEstimate: latestAudit.isEstimate || false
       } : null,
       history: sortedHistory.map(h => ({
         score: h.score,
@@ -679,14 +684,17 @@ app.post('/api/seo-audit', auth, auditLimiter, async (req, res) => {
             totalIssues: auditResult.aggregate.totalIssues || 0,
             totalRecommendations: auditResult.aggregate.totalRecommendations || 0
           },
-          // Generate simulated data for demo purposes
-          rankingKeywords: Math.floor(800 + Math.random() * 1000),
-          rankingKeywordsTrend: `+${Math.floor(2 + Math.random() * 15)}%`,
-          totalBacklinks: Math.floor(400 + Math.random() * 600),
-          totalBacklinksTrend: `+${Math.floor(1 + Math.random() * 8)}%`,
-          monthlyTraffic: `${(10 + Math.random() * 40).toFixed(1)}K`,
-          monthlyTrafficTrend: `+${Math.floor(5 + Math.random() * 20)}%`,
-          scoreTrend: `+${Math.floor(1 + Math.random() * 10)}%`
+          // Market Estimates - Based on score to feel realistic but flagged as estimates
+          rankingKeywords: auditResult.audit.indexedPages || Math.floor(500 + (auditResult.aggregate.averageScore * 10)),
+          rankingKeywordsTrend: `+${Math.floor(2 + (auditResult.aggregate.averageScore / 20))}%`,
+          totalBacklinks: auditResult.audit.mentions || Math.floor(200 + (auditResult.aggregate.averageScore * 5)),
+          totalBacklinksTrend: `+${Math.floor(1 + (auditResult.aggregate.averageScore / 30))}%`,
+          monthlyTraffic: auditResult.audit.indexedPages 
+            ? `${(auditResult.audit.indexedPages / 50).toFixed(1)}K` 
+            : `${(5 + (auditResult.aggregate.averageScore / 10)).toFixed(1)}K`,
+          monthlyTrafficTrend: `+${Math.floor(5 + (auditResult.aggregate.averageScore / 15))}%`,
+          scoreTrend: `+${Math.floor(1 + (auditResult.aggregate.averageScore / 50))}%`,
+          isEstimate: true
         };
         
         console.log('[DeepCrawl] Attempting to save to MongoDB for user:', req.userId);
@@ -791,14 +799,17 @@ app.post('/api/seo-audit', auth, auditLimiter, async (req, res) => {
             recommendationsCount: auditResult.audit.recommendationsCount || 0,
             recommendations: auditResult.audit.recommendations || []
           },
-          // Generate simulated data for demo purposes
-          rankingKeywords: Math.floor(1000 + (auditResult.audit.score * 5) + Math.random() * 200),
-          rankingKeywordsTrend: `+${Math.floor(5 + Math.random() * 10)}%`,
-          totalBacklinks: Math.floor(500 + (auditResult.audit.score * 3) + Math.random() * 100),
-          totalBacklinksTrend: `+${Math.floor(2 + Math.random() * 5)}%`,
-          monthlyTraffic: `${(30 + (auditResult.audit.score / 5) + Math.random() * 10).toFixed(1)}K`,
-          monthlyTrafficTrend: `+${Math.floor(10 + Math.random() * 15)}%`,
-          scoreTrend: `+${Math.floor(1 + Math.random() * 5)}%`
+          // Market Estimates (Regular Audit)
+          rankingKeywords: auditResult.audit.indexedPages || Math.floor(200 + (auditResult.audit.score * 8)),
+          rankingKeywordsTrend: `+${Math.floor(3 + (auditResult.audit.score / 25))}%`,
+          totalBacklinks: auditResult.audit.mentions || Math.floor(100 + (auditResult.audit.score * 4)),
+          totalBacklinksTrend: `+${Math.floor(2 + (auditResult.audit.score / 40))}%`,
+          monthlyTraffic: auditResult.audit.indexedPages 
+            ? `${(auditResult.audit.indexedPages / 30).toFixed(1)}K` 
+            : `${(2 + (auditResult.audit.score / 15)).toFixed(1)}K`,
+          monthlyTrafficTrend: `+${Math.floor(4 + (auditResult.audit.score / 20))}%`,
+          scoreTrend: `+${Math.floor(1 + (auditResult.audit.score / 60))}%`,
+          isEstimate: true
         };
       
       console.log('[SEOAudit] Attempting to save to MongoDB for user:', req.userId);
@@ -853,56 +864,156 @@ app.post('/api/seo-audit', auth, auditLimiter, async (req, res) => {
 
 // Keyword Research & Competitive Analysis (F5, F6, F7)
 // Uses Sentence Transformer model for semantic analysis
+// Keyword Research & Competitive Analysis (F5, F6, F7)
+// Now with RAG: Fetches live SERP data and passes to AI Model for Expert Insight
 app.post('/api/keywords/research', auth, keywordLimiter, async (req, res) => {
   try {
     const { baseKeyword, url } = req.body;
     const keyword = (baseKeyword || '').trim();
     if (!keyword) return res.status(400).json({ message: 'baseKeyword is required' });
 
-    console.log(`[KeywordResearch] Analyzing: "${keyword}" ${url ? `for URL: ${url}` : ''}`);
+    console.log(`\n=== RAG Keyword Research: "${keyword}" ===`);
 
-    let suggestions;
-    if (url) {
-      // Perform competitive/contextual research using the URL
+    // 1. Fetch real-time competitors for this keyword
+    const webSearchService = require('./services/webSearchService');
+    const competitors = await webSearchService.searchWebForCompetitors(keyword, 3);
+    console.log(`[RAG] Found ${competitors.length} live competitors.`);
+
+    // 2. Deep Audit of top competitors
+    const competitorAudits = await Promise.all(
+      competitors.map(async (c) => {
+        try {
+          const audit = await seoAuditService.performSEOAudit(c.url, null);
+          return audit.success ? { url: c.url, elements: audit.elements } : null;
+        } catch (e) { return null; }
+      })
+    );
+    const validCompetitors = competitorAudits.filter(c => c !== null);
+
+    // 3. AI RAG Layer: Use the AI Model's Comparison engine to find high-value keyword clusters
+    let aiStrategicKeywords = [];
+    if (validCompetitors.length > 0) {
+      try {
+        console.log(`[RAG] Injecting Aggregated Competitor Context into AI Model for Gap Intelligence...`);
+        
+        // Aggregate top 3 competitors for richer, more stable context
+        const top3 = validCompetitors.slice(0, 3);
+        const aggTitle = top3.map(c => c.elements.title).join(' | ');
+        const aggH1s = top3.flatMap(c => c.elements.h1Tags || []);
+        const avgWordCount = Math.round(top3.reduce((sum, c) => sum + (c.elements.wordCount || 0), 0) / top3.length);
+        const avgLinks = Math.round(top3.reduce((sum, c) => sum + (c.elements.linkCount || 0), 0) / top3.length);
+
+        const aiResponse = await axios.post('http://localhost:5001/compare', {
+          own: { 
+            title: keyword, 
+            h1Tags: [keyword],
+            content_length: 0,
+            num_internal_links: 0 
+          },
+          competitor: {
+            title: aggTitle,
+            h1Tags: aggH1s,
+            content_length: avgWordCount,
+            num_internal_links: avgLinks,
+            domain_authority: 50 // Standard baseline
+          }
+        }, { timeout: 30000 });
+
+        if (aiResponse.data.status === 'success') {
+          const gap = aiResponse.data.comparison.content_gap;
+          aiStrategicKeywords = gap.suggestions.map(s => {
+            const intent = s.reason.includes('Strategic') ? 'commercial' : 'informational';
+            const difficulty = 'Hard';
+            const relevance = 98;
+            return {
+              keyword: s.use,
+              type: 'ai-strategic',
+              intent: intent,
+              relevanceScore: relevance,
+              trendScore: 85,
+              estimatedDifficulty: difficulty,
+              reason: s.reason,
+              isFromCompetitors: true,
+              occurrences: 1,
+              strategy: `Implement AI-driven cluster for "${s.use}" to bridge the topical gap.`,
+              actionPlan: 'Immediate Priority'
+            };
+          });
+          console.log(`[RAG] AI generated ${aiStrategicKeywords.length} strategic keyword insights.`);
+        }
+      } catch (aiErr) {
+        console.warn(`[RAG] AI Enhancement Layer offline: ${aiErr.message}`);
+      }
+    }
+
+    // 4. Perform standard semantic analysis on all crawled competitor data
+    let suggestions = [];
+    if (validCompetitors.length > 0) {
+      suggestions = await keywordResearchService.performSemanticKeywordResearch(keyword, validCompetitors);
+    } else if (url) {
       suggestions = await keywordResearchService.performContextualResearch(keyword, url);
-    } else {
-      // Fallback to purely semantic patterns
+    } 
+
+    if (suggestions.length === 0) {
+      console.log(`[RAG] Strict semantic filtering resulted in 0 keywords. Falling back to patterns for: ${keyword}`);
       suggestions = await keywordResearchService.generateFallbackSuggestions(keyword);
     }
+
+    // 5. Merge AI Strategic Keywords with Semantic suggestions
+    const mergedResults = [...aiStrategicKeywords, ...suggestions]
+      .filter((v, i, a) => a.findIndex(t => t.keyword === v.keyword) === i) // Unique check
+      .filter(s => {
+        // Use the hardened isJunkKeyword from the service instead of local array
+        return !keywordResearchService.isJunkKeyword(s.keyword);
+      })
+      .slice(0, 50);
 
     res.json({
       baseKeyword: keyword,
       targetUrl: url || null,
-      suggestions: suggestions.slice(0, 30),
+      suggestions: mergedResults,
       metadata: {
-        totalSuggestions: suggestions.length,
-        source: url ? 'contextual-analyzer' : 'semantic-generator'
+        totalSuggestions: mergedResults.length,
+        competitorsCrawled: validCompetitors.length,
+        aiEnhanced: aiStrategicKeywords.length > 0,
+        source: 'rag-intelligence-engine'
       }
     });
   } catch (err) {
     console.error('Keyword research error:', err.message);
-    res.status(500).json({ message: 'Server error during keyword research' });
+    res.status(500).json({ message: 'Server error during RAG keyword research' });
   }
 });
 
 // Competitor Comparison & Content Gap
 app.post('/api/competitor/compare', auth, async (req, res) => {
   try {
-    const { ownUrl, competitorUrl } = req.body;
+    const { ownUrl, competitorUrl, ownHtml, compHtml } = req.body;
     if (!ownUrl || !competitorUrl) {
       return res.status(400).json({ message: 'Both Own URL and Competitor URL are required' });
     }
 
+    if (ownUrl.trim().toLowerCase() === competitorUrl.trim().toLowerCase()) {
+      return res.status(400).json({ message: 'Please enter a different URL for comparison. Comparing a site to itself provides no gap analysis.' });
+    }
+
     console.log(`\n=== Competitor Comparison Request ===`);
-    console.log(`Own: ${ownUrl} vs Comp: ${competitorUrl}`);
+    console.log(`Own: ${ownUrl} vs Comp: ${competitorUrl} (Manual HTML: ${!!ownHtml}/${!!compHtml})`);
 
     // Fetch and Analyze both
     const [ownResult, compResult] = await Promise.all([
-      seoAuditService.performSEOAudit(ownUrl, null),
-      seoAuditService.performSEOAudit(competitorUrl, null)
+      seoAuditService.performSEOAudit(ownUrl, ownHtml),
+      seoAuditService.performSEOAudit(competitorUrl, compHtml)
     ]);
 
     if (!ownResult.success || !compResult.success) {
+      // If our new heuristics caught dummy data/bot protection
+      if (ownResult.blocked || compResult.blocked) {
+        const blockMsg = ownResult.blocked ? ownResult.message : compResult.message;
+        console.warn(`[API] Comparison aborted: ${blockMsg}`);
+        return res.status(422).json({ message: blockMsg, blocked: true });
+      }
+
       return res.status(400).json({ 
         message: 'Failed to analyze one or both websites',
         ownError: ownResult.error,
@@ -913,12 +1024,14 @@ app.post('/api/competitor/compare', auth, async (req, res) => {
     // Call Python AI Model for Comparison with extended timeout
     const comparisonResponse = await axios.post('http://localhost:5001/compare', {
       own: {
+        url: ownUrl,
         ...ownResult.elements,
         content_length: ownResult.elements.wordCount,
         num_internal_links: ownResult.elements.linkCount,
         domain_authority: 30,
       },
       competitor: {
+        url: competitorUrl,
         ...compResult.elements,
         content_length: compResult.elements.wordCount,
         num_internal_links: compResult.elements.linkCount,
@@ -939,9 +1052,10 @@ app.post('/api/competitor/compare', auth, async (req, res) => {
           url: competitorUrl,
           score: compResult.audit.score,
           grade: compResult.audit.grade,
-          elements: compResult.elements
+          elements: compResult.elements,
+          isLikelyBlocked: compResult.elements.wordCount < 100 && compResult.elements.imageCount === 0
         },
-        analysis: comparisonResponse.data.comparison
+        analysis: cleanAnalysis(comparisonResponse.data.comparison)
       });
     }
 
@@ -951,6 +1065,19 @@ app.post('/api/competitor/compare', auth, async (req, res) => {
     res.status(500).json({ message: 'Server error during comparison', error: err.message });
   }
 });
+
+function cleanAnalysis(analysis) {
+  if (!analysis || !analysis.content_gap) return analysis;
+  
+  // Filter out suggestions that use placeholders
+  const placeholders = ['generic content', 'filler text', 'unoptimized sections', 'placeholder'];
+  analysis.content_gap.suggestions = analysis.content_gap.suggestions.filter(s => {
+    const instead = s.instead_of.toLowerCase();
+    return !placeholders.some(p => instead.includes(p));
+  });
+  
+  return analysis;
+}
 
 // Get current user's profile + settings
 app.get('/api/user/me', auth, async (req, res) => {
