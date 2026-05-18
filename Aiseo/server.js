@@ -862,6 +862,83 @@ app.post('/api/seo-audit', auth, auditLimiter, async (req, res) => {
   }
 });
 
+// Content Generation & Optimization via RAG Intelligence
+app.post('/api/content/optimize', auth, keywordLimiter, async (req, res) => {
+  try {
+    const { text, keyword } = req.body;
+    if (!text || !keyword) {
+      return res.status(400).json({ message: 'Both text and target keyword are required.' });
+    }
+
+    console.log(`\n=== Content Generation/Optimization Request ===`);
+    console.log(`Keyword: ${keyword}`);
+
+    // 1. Fetch live competitor insights (RAG process)
+    const webSearchService = require('./services/webSearchService');
+    const competitors = await webSearchService.searchWebForCompetitors(keyword, 3);
+    
+    // 2. Deep Audit & Semantic Extraction
+    const competitorAudits = await Promise.all(
+      competitors.map(async (c) => {
+        try {
+          const audit = await seoAuditService.performSEOAudit(c.url, null);
+          return audit.success ? { url: c.url, elements: audit.elements } : null;
+        } catch (e) { return null; }
+      })
+    );
+    const validCompetitors = competitorAudits.filter(c => c !== null);
+
+    let suggestions = [];
+    if (validCompetitors.length > 0) {
+      suggestions = await keywordResearchService.performSemanticKeywordResearch(keyword, validCompetitors);
+    } else {
+      suggestions = await keywordResearchService.generateFallbackSuggestions(keyword);
+    }
+
+    // Filter valid keywords
+    const topKeywords = suggestions
+      .filter(s => !keywordResearchService.isJunkKeyword(s.keyword))
+      .map(s => s.keyword)
+      .slice(0, 3);
+
+    // 3. Algorithmic Keyword Weaving
+    // Simply inject these keywords naturally into the user's paragraph
+    let optimizedText = text.trim();
+    const injected = [];
+    
+    // Ensure the text ends with punctuation
+    if (!/[.!?]$/.test(optimizedText)) {
+      optimizedText += '.';
+    }
+
+    if (topKeywords.length > 0) {
+      const templates = [
+        ` Additionally, incorporating strategies around \${kw} has proven highly effective in this space.`,
+        ` When exploring this topic, understanding the impact of \${kw} is crucial for comprehensive depth.`,
+        ` Experts also recommend focusing on \${kw} to maximize your competitive advantage.`
+      ];
+
+      topKeywords.forEach((kw, index) => {
+        // Only inject if not already present
+        if (!optimizedText.toLowerCase().includes(kw.toLowerCase())) {
+          const template = templates[index % templates.length].replace('${kw}', kw);
+          optimizedText += template;
+          injected.push(kw);
+        }
+      });
+    }
+
+    res.json({
+      optimizedText,
+      injectedKeywords: injected,
+      metadata: { source: 'rag-algorithmic-weaver' }
+    });
+  } catch (err) {
+    console.error('Content optimization error:', err);
+    res.status(500).json({ message: 'Server error during content optimization' });
+  }
+});
+
 // Keyword Research & Competitive Analysis (F5, F6, F7)
 // Uses Sentence Transformer model for semantic analysis
 // Keyword Research & Competitive Analysis (F5, F6, F7)

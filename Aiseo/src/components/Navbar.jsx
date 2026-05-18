@@ -43,6 +43,14 @@ const Navbar = ({ currentUser, currentPage, onNavigate, onLogout }) => {
         </li>
         <li>
           <a
+            onClick={() => onNavigate('content-generation')}
+            className={currentPage === 'content-generation' ? 'active' : ''}
+          >
+            <i className="fas fa-pen-nib"></i> Content Generation
+          </a>
+        </li>
+        <li>
+          <a
             onClick={() => onNavigate('seo-audit')}
             className={currentPage === 'seo-audit' ? 'active' : ''}
           >

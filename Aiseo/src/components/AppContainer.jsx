@@ -7,6 +7,8 @@ import SEOAudit from './SEOAudit';
 import Reports from './Reports';
 import Settings from './Settings';
 import Dashboard from './Dashboard';
+import ContentGeneration from './ContentGeneration';
+import Footer from './Footer';
 
 const AppContainer = ({ authToken, currentUser, onLogout, API_BASE_URL, onUserUpdate }) => {
   const [currentPage, setCurrentPage] = useState('dashboard');
@@ -47,7 +49,11 @@ const AppContainer = ({ authToken, currentUser, onLogout, API_BASE_URL, onUserUp
             onUserUpdate={onUserUpdate}
           />
         )}
+        {currentPage === 'content-generation' && (
+          <ContentGeneration authToken={authToken} API_BASE_URL={API_BASE_URL} />
+        )}
       </div>
+      <Footer />
     </div>
   );
 };

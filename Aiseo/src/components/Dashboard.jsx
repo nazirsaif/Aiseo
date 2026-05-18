@@ -71,9 +71,7 @@ const Dashboard = ({ currentUser, authToken, API_BASE_URL, onNavigate }) => {
   ];
 
   const recentActivity = [
-    { id: 1, action: 'SEO Audit completed', site: dashboardData.latestAudit?.url || 'No recent audits', time: dashboardData.latestAudit ? new Date(dashboardData.latestAudit.timestamp).toLocaleDateString() : '', status: dashboardData.latestAudit ? 'Success' : 'None' },
-    { id: 2, action: 'Keyword Research', site: 'Wait for activity...', time: '', status: 'None' },
-    { id: 3, action: 'Content Gap Analysis', site: 'Wait for activity...', time: '', status: 'None' },
+    { id: 1, action: 'SEO Audit completed', site: dashboardData.latestAudit?.url || 'No recent audits', time: dashboardData.latestAudit ? new Date(dashboardData.latestAudit.timestamp).toLocaleDateString() : '', status: dashboardData.latestAudit ? 'Success' : 'None' }
   ];
 
   // Process and format history data for the chart
@@ -224,7 +222,7 @@ const Dashboard = ({ currentUser, authToken, API_BASE_URL, onNavigate }) => {
         <div className="grid-side">
           <div className="card activity-card">
             <div className="card-header">
-              <h3>Recent Activity</h3>
+              <h3>Latest Audit Status</h3>
               <a href="#" className="view-all">View All</a>
             </div>
             <div className="activity-list">
@@ -263,6 +261,10 @@ const Dashboard = ({ currentUser, authToken, API_BASE_URL, onNavigate }) => {
               <button className="action-btn" onClick={() => onNavigate('content-gap')}>
                 <i className="fas fa-spell-check"></i>
                 <span>Content</span>
+              </button>
+              <button className="action-btn" onClick={() => onNavigate('content-generation')}>
+                <i className="fas fa-pen-nib"></i>
+                <span>Generate</span>
               </button>
               <button className="action-btn" onClick={() => onNavigate('reports')}>
                 <i className="fas fa-chart-bar"></i>
