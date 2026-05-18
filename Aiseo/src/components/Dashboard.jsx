@@ -254,6 +254,10 @@ const Dashboard = ({ currentUser, authToken, API_BASE_URL, onNavigate }) => {
                 <i className="fas fa-search"></i>
                 <span>Keyword</span>
               </button>
+              <button className="action-btn" onClick={() => onNavigate('competitor-analysis')}>
+                <i className="fas fa-chess-knight"></i>
+                <span>Competitor</span>
+              </button>
               <button className="action-btn" onClick={() => onNavigate('seo-audit')}>
                 <i className="fas fa-file-medical"></i>
                 <span>SEO Audit</span>

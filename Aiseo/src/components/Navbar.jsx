@@ -3,10 +3,7 @@ import React from 'react';
 const Navbar = ({ currentUser, currentPage, onNavigate, onLogout }) => {
   return (
     <nav className="navbar">
-      <div className="logo" onClick={() => onNavigate('dashboard')} style={{ cursor: 'pointer' }}>
-        <i className="fas fa-rocket"></i>
-        <span>SEO Insights</span>
-      </div>
+
 
       <ul className="nav-links">
         <li>
@@ -65,22 +62,61 @@ const Navbar = ({ currentUser, currentPage, onNavigate, onLogout }) => {
             <i className="fas fa-chart-bar"></i> Reports
           </a>
         </li>
-        <li>
-          <a
-            onClick={() => onNavigate('settings')}
-            className={currentPage === 'settings' ? 'active' : ''}
-          >
-            <i className="fas fa-cog"></i> Settings
-          </a>
-        </li>
       </ul>
 
-      <div className="user-menu">
-        <div className="user-info" style={{ textAlign: 'right', marginRight: '1rem' }}>
-          <div style={{ fontWeight: '600', fontSize: '0.9rem' }}>{currentUser?.name || 'User'}</div>
-          <div style={{ fontSize: '0.75rem', color: '#666' }}>{currentUser?.plan || 'Free Plan'}</div>
+      <div className="user-menu" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+        <div 
+          onClick={() => onNavigate('settings')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.75rem',
+            padding: '0.4rem 1rem 0.4rem 0.4rem',
+            borderRadius: '50px',
+            background: currentPage === 'settings' ? 'var(--primary)' : 'var(--glass)',
+            border: '1px solid var(--border)',
+            cursor: 'pointer',
+            transition: 'all 0.3s'
+          }}
+        >
+          <div style={{
+            width: '32px',
+            height: '32px',
+            borderRadius: '50%',
+            background: 'linear-gradient(135deg, var(--primary), var(--secondary))',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'white',
+            fontSize: '0.9rem',
+            overflow: 'hidden'
+          }}>
+            {currentUser?.profilePicture ? (
+              <img src={currentUser.profilePicture} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            ) : (
+              <i className="fas fa-user"></i>
+            )}
+          </div>
+          <span style={{ fontWeight: '600', fontSize: '0.9rem', color: 'white' }}>
+            {currentUser?.name || 'Saifullah'}
+          </span>
         </div>
-        <button className="btn" onClick={onLogout} style={{ padding: '0.5rem', background: 'transparent', color: '#666' }}>
+        <button 
+          className="btn" 
+          onClick={onLogout} 
+          style={{ 
+            padding: '0.5rem', 
+            background: 'transparent', 
+            color: 'var(--text-muted)', 
+            border: 'none', 
+            cursor: 'pointer',
+            fontSize: '1.2rem',
+            transition: 'color 0.3s'
+          }}
+          onMouseOver={(e) => e.currentTarget.style.color = 'white'}
+          onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
+          title="Logout"
+        >
           <i className="fas fa-sign-out-alt"></i>
         </button>
       </div>

@@ -6,7 +6,8 @@ const Settings = ({ authToken, currentUser, onUserUpdate, API_BASE_URL }) => {
     email: user?.email || '',
     company: user?.company || '',
     websiteUrl: user?.websiteUrl || '',
-    bio: user?.bio || ''
+    bio: user?.bio || '',
+    profilePicture: user?.profilePicture || ''
   });
 
   const [activeSection, setActiveSection] = useState('profile');
@@ -60,6 +61,17 @@ const Settings = ({ authToken, currentUser, onUserUpdate, API_BASE_URL }) => {
 
   const toggleSwitch = (id) => {
     setToggleStates(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setProfile(prev => ({ ...prev, profilePicture: reader.result }));
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const saveProfile = async () => {
@@ -127,6 +139,65 @@ const Settings = ({ authToken, currentUser, onUserUpdate, API_BASE_URL }) => {
     navigator.clipboard.writeText(apiKey);
     showToast('Neural API key copied to buffer.');
   };
+
+  const rotateApiKey = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/user/rotate-api-key`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setApiKey(data.apiKey);
+        showToast('API Key rotated successfully.');
+        if (onUserUpdate) onUserUpdate({ ...currentUser, apiKey: data.apiKey });
+      } else {
+        showToast(data.message || 'Key rotation failed.', 'error');
+      }
+    } catch (err) {
+      showToast('Failed to rotate API Key.', 'error');
+    }
+  };
+
+  const terminateSession = async (sessionId) => {
+    if (!sessionId) return showToast('Cannot terminate static mock session.', 'error');
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/user/sessions/${sessionId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setActiveSessions(data.activeSessions);
+        showToast('Session terminated.');
+        if (onUserUpdate) onUserUpdate({ ...currentUser, activeSessions: data.activeSessions });
+      } else {
+        showToast(data.message || 'Termination failed.', 'error');
+      }
+    } catch (err) {
+      showToast('Failed to terminate session.', 'error');
+    }
+  };
+
+  const addPaymentChannel = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/user/payment-methods`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setBilling(prev => ({ ...prev, paymentMethods: data.paymentMethods }));
+        showToast('Payment channel added.');
+        if (onUserUpdate) onUserUpdate({ ...currentUser, billing: { ...currentUser.billing, paymentMethods: data.paymentMethods } });
+      } else {
+        showToast(data.message || 'Failed to add payment channel.', 'error');
+      }
+    } catch (err) {
+      showToast('Failed to add payment channel.', 'error');
+    }
+  };
+
 
   // --- Sub-components ---
   const SidebarItem = ({ id, icon, label }) => (
@@ -246,7 +317,7 @@ const Settings = ({ authToken, currentUser, onUserUpdate, API_BASE_URL }) => {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: '4rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '300px minmax(0, 1fr)', gap: '2rem', width: '100%' }}>
 
         {/* Navigation Sidebar */}
         <aside style={{ position: 'sticky', top: '120px', alignSelf: 'start' }}>
@@ -304,11 +375,16 @@ const Settings = ({ authToken, currentUser, onUserUpdate, API_BASE_URL }) => {
                       fontWeight: '900',
                       color: '#fff',
                       boxShadow: '0 20px 40px rgba(99, 102, 241, 0.4)',
-                      transform: 'rotate(-5deg)'
+                      transform: 'rotate(-5deg)',
+                      overflow: 'hidden'
                     }}>
-                      {profile.name?.charAt(0) || 'A'}
+                      {profile.profilePicture ? (
+                        <img src={profile.profilePicture} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      ) : (
+                        profile.name?.charAt(0) || 'A'
+                      )}
                     </div>
-                    <div style={{
+                    <label style={{
                       position: 'absolute',
                       bottom: '5px',
                       right: '5px',
@@ -324,8 +400,34 @@ const Settings = ({ authToken, currentUser, onUserUpdate, API_BASE_URL }) => {
                       color: 'var(--primary)',
                       boxShadow: '0 5px 15px rgba(0,0,0,0.3)'
                     }}>
+                      <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleImageUpload} />
                       <i className="fas fa-camera"></i>
-                    </div>
+                    </label>
+                    {profile.profilePicture && (
+                      <div
+                        onClick={() => setProfile(prev => ({ ...prev, profilePicture: '' }))}
+                        style={{
+                          position: 'absolute',
+                          bottom: '5px',
+                          left: '5px',
+                          width: '44px',
+                          height: '44px',
+                          borderRadius: '15px',
+                          background: 'var(--bg-surface)',
+                          border: '2px solid rgba(244, 63, 94, 0.3)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: 'pointer',
+                          color: '#f43f5e',
+                          boxShadow: '0 5px 15px rgba(0,0,0,0.3)',
+                          zIndex: 10
+                        }}
+                        title="Remove Picture"
+                      >
+                        <i className="fas fa-trash-alt"></i>
+                      </div>
+                    )}
                   </div>
                   <div>
                     <h3 style={{ fontSize: '2rem', fontWeight: '900', marginBottom: '0.5rem' }}>Identity Management</h3>
@@ -334,24 +436,24 @@ const Settings = ({ authToken, currentUser, onUserUpdate, API_BASE_URL }) => {
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2.5rem', marginBottom: '3rem' }}>
-                  <div className="form-group">
+                  <div className="form-group" style={{ width: '100%' }}>
                     <label style={{ color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: '800', textTransform: 'uppercase', marginBottom: '1rem', display: 'block' }}>Full Name</label>
-                    <input type="text" value={profile.name || ''} onChange={(e) => handleProfileChange('name', e.target.value)} style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)', padding: '1.25rem', borderRadius: '16px' }} />
+                    <input type="text" value={profile.name || ''} onChange={(e) => handleProfileChange('name', e.target.value)} style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)', padding: '1.25rem', borderRadius: '16px' }} />
                   </div>
-                  <div className="form-group">
+                  <div className="form-group" style={{ width: '100%' }}>
                     <label style={{ color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: '800', textTransform: 'uppercase', marginBottom: '1rem', display: 'block' }}>Email Alias</label>
-                    <input type="email" value={profile.email || ''} onChange={(e) => handleProfileChange('email', e.target.value)} style={{ background: 'rgba(0,0,0,0.2)', color: "#fff", border: '1px solid rgba(255,255,255,0.05)', padding: '1.25rem', borderRadius: '16px' }} />
+                    <input type="email" value={profile.email || ''} onChange={(e) => handleProfileChange('email', e.target.value)} style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(0,0,0,0.2)', color: "#fff", border: '1px solid rgba(255,255,255,0.05)', padding: '1.25rem', borderRadius: '16px' }} />
                   </div>
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2.5rem', marginBottom: '4rem' }}>
-                  <div className="form-group">
+                  <div className="form-group" style={{ width: '100%' }}>
                     <label style={{ color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: '800', textTransform: 'uppercase', marginBottom: '1rem', display: 'block' }}>Nexus / Company</label>
-                    <input type="text" value={profile.company || ''} onChange={(e) => handleProfileChange('company', e.target.value)} style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)', padding: '1.25rem', borderRadius: '16px' }} />
+                    <input type="text" value={profile.company || ''} onChange={(e) => handleProfileChange('company', e.target.value)} style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)', padding: '1.25rem', borderRadius: '16px' }} />
                   </div>
-                  <div className="form-group">
+                  <div className="form-group" style={{ width: '100%' }}>
                     <label style={{ color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: '800', textTransform: 'uppercase', marginBottom: '1rem', display: 'block' }}>Primary Intelligence Domain</label>
-                    <input type="url" value={profile.websiteUrl || ''} onChange={(e) => handleProfileChange('websiteUrl', e.target.value)} placeholder="https://..." style={{ background: 'rgba(0,0,0,0.2)', color: "#fff", border: '1px solid rgba(255,255,255,0.05)', padding: '1.25rem', borderRadius: '16px' }} />
+                    <input type="url" value={profile.websiteUrl || ''} onChange={(e) => handleProfileChange('websiteUrl', e.target.value)} placeholder="https://..." style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(0,0,0,0.2)', color: "#fff", border: '1px solid rgba(255,255,255,0.05)', padding: '1.25rem', borderRadius: '16px' }} />
                   </div>
                 </div>
 
@@ -366,11 +468,10 @@ const Settings = ({ authToken, currentUser, onUserUpdate, API_BASE_URL }) => {
                 </h4>
                 <textarea
                   rows="5"
-                  cols="80"
                   value={profile.bio || ''}
                   onChange={(e) => handleProfileChange('bio', e.target.value)}
                   placeholder="Define your strategic SEO objectives for the neural model..."
-                  style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.05)', padding: '1.5rem', borderRadius: '24px', fontSize: '1.1rem', color: 'var(--text-main)' }}
+                  style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.05)', padding: '1.5rem', borderRadius: '24px', fontSize: '1.1rem', color: 'var(--text-main)' }}
                 ></textarea>
               </div>
             </>
@@ -423,7 +524,7 @@ const Settings = ({ authToken, currentUser, onUserUpdate, API_BASE_URL }) => {
                           <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>{s.location} • {s.lastActive}</div>
                         </div>
                       </div>
-                      {s.lastActive !== 'Current session' && <button className="btn-secondary" style={{ color: '#f43f5e', border: '1px solid rgba(244, 63, 94, 0.2)', padding: '0.6rem 1.25rem', fontSize: '0.85rem', borderRadius: '12px' }}>Terminate</button>}
+                      {s.lastActive !== 'Current session' && <button className="btn-secondary" onClick={() => terminateSession(s._id)} style={{ color: '#f43f5e', border: '1px solid rgba(244, 63, 94, 0.2)', padding: '0.6rem 1.25rem', fontSize: '0.85rem', borderRadius: '12px' }}>Terminate</button>}
                     </div>
                   ))}
                 </div>
@@ -460,7 +561,7 @@ const Settings = ({ authToken, currentUser, onUserUpdate, API_BASE_URL }) => {
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'relative', zIndex: 1 }}>
                   <span style={{ fontSize: '1rem', color: 'var(--text-muted)' }}>Rotate key if you suspect unauthorized neural access.</span>
-                  <button className="btn-secondary" style={{ color: '#f43f5e', border: '1px solid rgba(244, 63, 94, 0.2)', padding: '0.8rem 1.5rem', borderRadius: '15px' }}>Rotate Key</button>
+                  <button className="btn-secondary" onClick={rotateApiKey} style={{ color: '#f43f5e', border: '1px solid rgba(244, 63, 94, 0.2)', padding: '0.8rem 1.5rem', borderRadius: '15px' }}>Rotate Key</button>
                 </div>
               </div>
             </div>
@@ -511,7 +612,7 @@ const Settings = ({ authToken, currentUser, onUserUpdate, API_BASE_URL }) => {
                       </div>
                     </div>
                   ))}
-                  <div style={{ padding: '2rem', border: '2px dashed rgba(255,255,255,0.1)', borderRadius: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--primary)', fontWeight: '800', fontSize: '1.1rem', transition: '0.3s' }} className="table-row-hover">
+                  <div onClick={addPaymentChannel} style={{ padding: '2rem', border: '2px dashed rgba(255,255,255,0.1)', borderRadius: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--primary)', fontWeight: '800', fontSize: '1.1rem', transition: '0.3s' }} className="table-row-hover">
                     <i className="fas fa-plus-circle" style={{ marginRight: '0.75rem' }}></i> New Channel
                   </div>
                 </div>

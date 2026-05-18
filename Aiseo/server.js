@@ -5,6 +5,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const rateLimit = require('express-rate-limit');
 const axios = require('axios');
+const crypto = require('crypto');
 require('dotenv').config();
  
 const app = express();
@@ -81,8 +82,8 @@ function isSafeUrl(urlString) {
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
 app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // MongoDB connection
 mongoose
@@ -106,6 +107,7 @@ const userSchema = new mongoose.Schema(
     // Optional extended profile fields used in Settings page
     websiteUrl: { type: String, trim: true },
     bio: { type: String, trim: true },
+    profilePicture: { type: String, default: '' },
     // Persist user preferences / settings toggles
     settings: {
       toggles: {
@@ -149,7 +151,8 @@ const userSchema = new mongoose.Schema(
         { deviceInfo: 'Chrome on Windows', location: 'Rawalpindi, Pakistan', lastActive: 'Current session', isActive: true },
         { deviceInfo: 'Safari on iPhone', location: 'Rawalpindi, Pakistan', lastActive: 'Last active 2 hours ago', isActive: true }
       ]
-    }
+    },
+    apiKey: { type: String, default: 'NEURAL_KEY_PENDING' }
   },
   { timestamps: true }
 );
@@ -233,9 +236,37 @@ const seoAuditSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+const keywordResearchSchema = new mongoose.Schema({
+  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  baseKeyword: { type: String, required: true },
+  targetUrl: { type: String, default: null },
+  suggestions: { type: Array, default: [] },
+  metadata: { type: Object, default: {} }
+}, { timestamps: true });
+
+const competitorAnalysisSchema = new mongoose.Schema({
+  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  ownUrl: { type: String, required: true },
+  competitorUrl: { type: String, required: true },
+  own: { type: Object, default: {} },
+  competitor: { type: Object, default: {} },
+  analysis: { type: Object, default: {} }
+}, { timestamps: true });
+
+const contentDraftSchema = new mongoose.Schema({
+  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  targetKeyword: { type: String, required: true },
+  originalText: { type: String, required: true },
+  optimizedText: { type: String, required: true },
+  injectedKeywords: { type: Array, default: [] }
+}, { timestamps: true });
+
 const User = mongoose.model('User', userSchema);
 const Analysis = mongoose.model('Analysis', analysisSchema);
 const SEOAudit = mongoose.model('SEOAudit', seoAuditSchema);
+const KeywordResearch = mongoose.model('KeywordResearch', keywordResearchSchema);
+const CompetitorAnalysis = mongoose.model('CompetitorAnalysis', competitorAnalysisSchema);
+const ContentDraft = mongoose.model('ContentDraft', contentDraftSchema);
 
 // Helper: auth middleware
 function auth(req, res, next) {
@@ -271,6 +302,7 @@ function toPublicUser(userDoc) {
     company: userDoc.company || '',
     websiteUrl: userDoc.websiteUrl || '',
     bio: userDoc.bio || '',
+    profilePicture: userDoc.profilePicture || '',
     settings: {
       toggles: {
         twoFA: userDoc.settings?.toggles?.twoFA ?? false,
@@ -291,7 +323,8 @@ function toPublicUser(userDoc) {
       }
     },
     billing: userDoc.billing || { plan: 'Professional Plan', paymentMethods: [] },
-    activeSessions: userDoc.activeSessions || []
+    activeSessions: userDoc.activeSessions || [],
+    apiKey: userDoc.apiKey || 'NEURAL_KEY_PENDING'
   };
 }
 
@@ -928,11 +961,25 @@ app.post('/api/content/optimize', auth, keywordLimiter, async (req, res) => {
       });
     }
 
-    res.json({
+    const payload = {
       optimizedText,
       injectedKeywords: injected,
       metadata: { source: 'rag-algorithmic-weaver' }
-    });
+    };
+
+    try {
+      await ContentDraft.create({
+        user: req.userId,
+        targetKeyword: keyword,
+        originalText: text,
+        optimizedText: payload.optimizedText,
+        injectedKeywords: payload.injectedKeywords
+      });
+    } catch (dbErr) {
+      console.warn('Failed to save content draft to DB:', dbErr.message);
+    }
+
+    res.json(payload);
   } catch (err) {
     console.error('Content optimization error:', err);
     res.status(500).json({ message: 'Server error during content optimization' });
@@ -1045,7 +1092,7 @@ app.post('/api/keywords/research', auth, keywordLimiter, async (req, res) => {
       })
       .slice(0, 50);
 
-    res.json({
+    const payload = {
       baseKeyword: keyword,
       targetUrl: url || null,
       suggestions: mergedResults,
@@ -1055,7 +1102,21 @@ app.post('/api/keywords/research', auth, keywordLimiter, async (req, res) => {
         aiEnhanced: aiStrategicKeywords.length > 0,
         source: 'rag-intelligence-engine'
       }
-    });
+    };
+
+    try {
+      await KeywordResearch.create({
+        user: req.userId,
+        baseKeyword: payload.baseKeyword,
+        targetUrl: payload.targetUrl,
+        suggestions: payload.suggestions,
+        metadata: payload.metadata
+      });
+    } catch (dbErr) {
+      console.warn('Failed to save keyword research to DB:', dbErr.message);
+    }
+
+    res.json(payload);
   } catch (err) {
     console.error('Keyword research error:', err.message);
     res.status(500).json({ message: 'Server error during RAG keyword research' });
@@ -1117,7 +1178,7 @@ app.post('/api/competitor/compare', auth, async (req, res) => {
     }, { timeout: 45000 });
 
     if (comparisonResponse.data && comparisonResponse.data.status === 'success') {
-      return res.json({
+      const payload = {
         success: true,
         own: {
           url: ownUrl,
@@ -1133,7 +1194,22 @@ app.post('/api/competitor/compare', auth, async (req, res) => {
           isLikelyBlocked: compResult.elements.wordCount < 100 && compResult.elements.imageCount === 0
         },
         analysis: cleanAnalysis(comparisonResponse.data.comparison)
-      });
+      };
+
+      try {
+        await CompetitorAnalysis.create({
+          user: req.userId,
+          ownUrl: ownUrl,
+          competitorUrl: competitorUrl,
+          own: payload.own,
+          competitor: payload.competitor,
+          analysis: payload.analysis
+        });
+      } catch (dbErr) {
+        console.warn('Failed to save competitor analysis to DB:', dbErr.message);
+      }
+
+      return res.json(payload);
     }
 
     res.status(500).json({ message: 'Comparison model failed to respond correctly' });
@@ -1179,6 +1255,7 @@ app.put('/api/user/me', auth, async (req, res) => {
       company,
       websiteUrl,
       bio,
+      profilePicture,
       settings,
       billing,
       activeSessions
@@ -1214,6 +1291,10 @@ app.put('/api/user/me', auth, async (req, res) => {
 
     if (bio !== undefined) {
       user.bio = bio || '';
+    }
+
+    if (profilePicture !== undefined) {
+      user.profilePicture = profilePicture || '';
     }
 
     if (settings) {
@@ -1274,6 +1355,62 @@ app.post('/api/user/change-password', auth, async (req, res) => {
     res.json({ message: 'Password updated successfully' });
   } catch (err) {
     console.error('Change password error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Rotate API Key
+app.post('/api/user/rotate-api-key', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    
+    const newKey = 'nsk_' + crypto.randomBytes(24).toString('hex');
+    user.apiKey = newKey;
+    await user.save();
+    
+    res.json({ apiKey: newKey, message: 'API Key rotated successfully' });
+  } catch (err) {
+    console.error('Rotate API Key error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Terminate Session
+app.delete('/api/user/sessions/:sessionId', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    
+    user.activeSessions = user.activeSessions.filter(s => s._id.toString() !== req.params.sessionId);
+    await user.save();
+    
+    res.json({ message: 'Session terminated successfully', activeSessions: user.activeSessions });
+  } catch (err) {
+    console.error('Terminate session error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Add Mock Payment Method
+app.post('/api/user/payment-methods', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    
+    const randomLast4 = Math.floor(1000 + Math.random() * 9000);
+    const mockMethod = {
+      cardNumber: `•••• •••• •••• ${randomLast4}`,
+      expiry: `12/202${Math.floor(6 + Math.random() * 4)}`,
+      isDefault: user.billing.paymentMethods.length === 0
+    };
+    
+    user.billing.paymentMethods.push(mockMethod);
+    await user.save();
+    
+    res.json({ message: 'Payment method added successfully', paymentMethods: user.billing.paymentMethods });
+  } catch (err) {
+    console.error('Add payment method error:', err);
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -1341,6 +1478,36 @@ app.get('/api/reports', auth, async (req, res) => {
     res.json({ reports });
   } catch (err) {
     console.error('Get reports error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Get user's Keyword Research history
+app.get('/api/keywords/history', auth, async (req, res) => {
+  try {
+    const history = await KeywordResearch.find({ user: req.userId }).sort({ createdAt: -1 }).limit(20).lean();
+    res.json({ history });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Get user's Competitor Analysis history
+app.get('/api/competitor/history', auth, async (req, res) => {
+  try {
+    const history = await CompetitorAnalysis.find({ user: req.userId }).sort({ createdAt: -1 }).limit(20).lean();
+    res.json({ history });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Get user's Content Draft history
+app.get('/api/content/history', auth, async (req, res) => {
+  try {
+    const history = await ContentDraft.find({ user: req.userId }).sort({ createdAt: -1 }).limit(20).lean();
+    res.json({ history });
+  } catch (err) {
     res.status(500).json({ message: 'Server error' });
   }
 });
