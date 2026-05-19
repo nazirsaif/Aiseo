@@ -489,19 +489,41 @@ app.get('/api/dashboard/overview', auth, async (req, res) => {
 // Dashboard recent keyword inputs for "Top Performing Keywords" table
 app.get('/api/dashboard/keywords', auth, async (req, res) => {
   try {
-    const analyses = await Analysis.find({ user: req.userId })
+    // Pull real keyword research data if available
+    const savedResearch = await KeywordResearch.find({ user: req.userId })
       .sort({ createdAt: -1 })
       .limit(5)
       .lean();
 
-    const rows = analyses.map((a, index) => ({
-      id: a._id,
-      keyword: a.input,
-      searchVolume: 1000 + index * 500, // simple derived numbers to keep UI rich
-      difficulty: index % 3 === 0 ? 'Easy' : index % 3 === 1 ? 'Medium' : 'Hard',
-      performance: index % 3 === 0 ? 'Strong' : index % 3 === 1 ? 'Medium' : 'Weak',
-      opportunity: index % 3 === 0 ? 'High' : index % 3 === 1 ? 'Medium' : 'Very High'
-    }));
+    let rows;
+    if (savedResearch.length > 0) {
+      // Use real keyword research results
+      rows = savedResearch.map(r => {
+        const topSuggestion = (r.suggestions || [])[0];
+        return {
+          id: r._id,
+          keyword: r.baseKeyword,
+          searchVolume: topSuggestion?.relevanceScore ? topSuggestion.relevanceScore * 10 : 0,
+          difficulty: topSuggestion?.estimatedDifficulty || 'Medium',
+          performance: (topSuggestion?.relevanceScore || 0) > 70 ? 'Strong' : (topSuggestion?.relevanceScore || 0) > 40 ? 'Medium' : 'Weak',
+          opportunity: topSuggestion?.actionPlan || 'Long-term Growth'
+        };
+      });
+    } else {
+      // Fallback to analysis inputs if no keyword research has been run
+      const analyses = await Analysis.find({ user: req.userId })
+        .sort({ createdAt: -1 })
+        .limit(5)
+        .lean();
+      rows = analyses.map(a => ({
+        id: a._id,
+        keyword: a.input,
+        searchVolume: 0,
+        difficulty: 'Unknown',
+        performance: 'Unknown',
+        opportunity: 'Run keyword research'
+      }));
+    }
 
     res.json({ keywords: rows });
   } catch (err) {
@@ -908,7 +930,12 @@ app.post('/api/content/optimize', auth, keywordLimiter, async (req, res) => {
 
     // 1. Fetch live competitor insights (RAG process)
     const webSearchService = require('./services/webSearchService');
-    const competitors = await webSearchService.searchWebForCompetitors(keyword, 3);
+    let competitors = [];
+    try {
+      competitors = await webSearchService.searchWebForCompetitors(keyword, 3);
+    } catch (e) {
+      console.warn('[ContentGen] Web search failed:', e.message);
+    }
     
     // 2. Deep Audit & Semantic Extraction
     const competitorAudits = await Promise.all(
@@ -920,51 +947,173 @@ app.post('/api/content/optimize', auth, keywordLimiter, async (req, res) => {
       })
     );
     const validCompetitors = competitorAudits.filter(c => c !== null);
+    console.log(`[ContentGen] Valid competitors crawled: ${validCompetitors.length}`);
 
     let suggestions = [];
     if (validCompetitors.length > 0) {
       suggestions = await keywordResearchService.performSemanticKeywordResearch(keyword, validCompetitors);
-    } else {
+    }
+    
+    // 3. If RAG produced nothing, generate keyword variations algorithmically
+    if (suggestions.length === 0) {
+      console.log('[ContentGen] RAG returned 0 suggestions — generating keyword variations');
       suggestions = await keywordResearchService.generateFallbackSuggestions(keyword);
     }
-
-    // Filter valid keywords
-    const topKeywords = suggestions
-      .filter(s => !keywordResearchService.isJunkKeyword(s.keyword))
-      .map(s => s.keyword)
-      .slice(0, 3);
-
-    // 3. Algorithmic Keyword Weaving
-    // Simply inject these keywords naturally into the user's paragraph
-    let optimizedText = text.trim();
-    const injected = [];
     
-    // Ensure the text ends with punctuation
-    if (!/[.!?]$/.test(optimizedText)) {
-      optimizedText += '.';
-    }
-
-    if (topKeywords.length > 0) {
-      const templates = [
-        ` Additionally, incorporating strategies around \${kw} has proven highly effective in this space.`,
-        ` When exploring this topic, understanding the impact of \${kw} is crucial for comprehensive depth.`,
-        ` Experts also recommend focusing on \${kw} to maximize your competitive advantage.`
-      ];
-
-      topKeywords.forEach((kw, index) => {
-        // Only inject if not already present
-        if (!optimizedText.toLowerCase().includes(kw.toLowerCase())) {
-          const template = templates[index % templates.length].replace('${kw}', kw);
-          optimizedText += template;
-          injected.push(kw);
+    // 4. If still nothing, build minimal variations from the keyword itself
+    if (suggestions.length === 0) {
+      console.log('[ContentGen] Fallback also empty — building variations from keyword');
+      const kwLower = keyword.toLowerCase();
+      const kwWordSet = new Set(kwLower.split(/\s+/));
+      const modifiers = ['best', 'top', 'effective', 'advanced', 'proven', 'essential', 'key', 'modern'];
+      const suffixes = ['techniques', 'methods', 'tips', 'tools', 'framework', 'approach', 'trends', 'guide'];
+      suggestions = [];
+      // Generate "modifier + keyword" variations (skip if modifier word is already in keyword)
+      for (let i = 0; i < modifiers.length && suggestions.length < 8; i++) {
+        if (kwWordSet.has(modifiers[i])) continue;
+        const phrase = `${modifiers[i]} ${kwLower}`;
+        if (!text.toLowerCase().includes(phrase)) {
+          suggestions.push({ keyword: phrase, intent: 'informational', relevanceScore: 80 - i * 5 });
         }
-      });
+      }
+      // Generate "keyword + suffix" variations (skip if suffix word is already in keyword)
+      for (let i = 0; i < suffixes.length && suggestions.length < 12; i++) {
+        if (kwWordSet.has(suffixes[i])) continue;
+        const phrase = `${kwLower} ${suffixes[i]}`;
+        if (!text.toLowerCase().includes(phrase)) {
+          suggestions.push({ keyword: phrase, intent: 'informational', relevanceScore: 70 - i * 5 });
+        }
+      }
     }
+
+    // Filter valid keywords — take up to 5 for richer optimization
+    const topSuggestions = suggestions
+      .filter(s => !keywordResearchService.isJunkKeyword(s.keyword))
+      .slice(0, 5);
+    const topKeywords = topSuggestions.map(s => s.keyword);
+    console.log(`[ContentGen] Top keywords to inject: [${topKeywords.join(', ')}]`);
+
+    // ── SMART KEYWORD WEAVING ENGINE ──
+    // Split user text into sentences, build intent-aware bridging sentences,
+    // insert at varied positions, deduplicate against existing content.
+
+    let optimizedText = text.trim();
+    if (!/[.!?]$/.test(optimizedText)) optimizedText += '.';
+
+    const injected = [];
+
+    // Intent-aware bridging clause pools
+    const openers = [
+      'In the context of {topic},',
+      'When optimizing for {topic},',
+      'Industry leaders in {topic} emphasize that',
+      'A key factor in {topic} success is',
+      'Research into {topic} consistently shows that',
+      'For professionals focused on {topic},',
+      'To strengthen your {topic} strategy,',
+      'Competitive analysis in {topic} reveals that',
+    ];
+    const bridges = {
+      informational: [
+        'understanding the role of "{kw}" helps establish topical authority.',
+        'creating content around "{kw}" addresses a critical knowledge gap.',
+        'a dedicated section on "{kw}" improves the depth signal search engines measure.',
+        'explaining "{kw}" in context demonstrates subject-matter expertise to readers.',
+        'covering "{kw}" thoroughly aligns your content with how experts discuss this topic.',
+      ],
+      commercial: [
+        'comparing options like "{kw}" gives readers the decision-making context they need.',
+        'reviewing "{kw}" positions your content as a trusted buying guide in this niche.',
+        'evaluating "{kw}" against alternatives strengthens your page\'s commercial intent signal.',
+        'featuring "{kw}" in a comparison framework captures high-intent search traffic.',
+      ],
+      transactional: [
+        'highlighting "{kw}" in your call-to-action can improve conversion rates.',
+        'presenting "{kw}" with clear pricing and availability accelerates purchase decisions.',
+        'emphasizing "{kw}" in your product sections captures ready-to-buy search queries.',
+      ],
+      navigational: [
+        'ensuring clear navigation around "{kw}" improves user experience and reduces bounce rate.',
+        'structuring your "{kw}" pages with intuitive linking helps both users and crawlers.',
+      ],
+      default: [
+        'incorporating "{kw}" naturally strengthens the semantic completeness of your content.',
+        'addressing "{kw}" within your existing narrative creates a more comprehensive resource.',
+        'weaving "{kw}" into your discussion enhances topical relevance for search algorithms.',
+        'referencing "{kw}" adds a layer of depth that distinguishes your content from competitors.',
+        'expanding your coverage to include "{kw}" fills a gap competitors are already leveraging.',
+      ],
+    };
+
+    // Split text into sentences for insertion
+    const sentences = optimizedText.match(/[^.!?]+[.!?]+/g) || [optimizedText];
+    const totalSentences = sentences.length;
+
+    // Determine insertion points: distribute evenly across the text
+    const insertionPoints = [];
+    if (totalSentences >= 5) {
+      insertionPoints.push(1, Math.floor(totalSentences / 3), Math.floor(totalSentences * 2 / 3), totalSentences - 1, totalSentences);
+    } else if (totalSentences >= 3) {
+      insertionPoints.push(1, Math.floor(totalSentences / 2), totalSentences - 1, totalSentences);
+    } else if (totalSentences === 2) {
+      insertionPoints.push(1, 2, 2);
+    } else {
+      insertionPoints.push(1, 1, 1);
+    }
+
+    // Build bridging sentences and insert
+    const insertions = [];
+    topKeywords.forEach((kw, idx) => {
+      // Only skip if the EXACT multi-word phrase exists (not substring match)
+      const kwLower = kw.toLowerCase();
+      const textLower = optimizedText.toLowerCase();
+      // Check for exact phrase match with word boundaries
+      const exactRegex = new RegExp(`\\b${kwLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+      if (exactRegex.test(textLower)) {
+        console.log(`[ContentGen] Skipping "${kw}" — already present in text`);
+        return;
+      }
+      if (idx >= insertionPoints.length) return;
+
+      // Deterministic selection using keyword hash
+      const hash = Array.from(kw).reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0);
+      const absHash = Math.abs(hash);
+
+      // Pick intent
+      const intent = topSuggestions[idx]?.intent || 'informational';
+      const pool = bridges[intent] || bridges.default;
+
+      // Pick opener + bridge deterministically
+      const opener = openers[(absHash + idx) % openers.length].replace('{topic}', keyword);
+      const bridge = pool[(absHash + idx * 3) % pool.length].replace('{kw}', kw);
+      const newSentence = ` ${opener} ${bridge}`;
+
+      insertions.push({ position: insertionPoints[idx], sentence: newSentence });
+      injected.push(kw);
+    });
+
+    // Reconstruct text with insertions (insert from end to preserve indices)
+    insertions.sort((a, b) => b.position - a.position);
+    for (const ins of insertions) {
+      const pos = Math.min(ins.position, sentences.length);
+      sentences.splice(pos, 0, ins.sentence);
+    }
+    optimizedText = sentences.join('').trim();
+
+    // If we still have remaining keywords, add a closing sentence
+    const remaining = topKeywords.filter(kw => !injected.includes(kw) && !optimizedText.toLowerCase().includes(kw.toLowerCase()));
+    if (remaining.length > 0) {
+      const kwList = remaining.slice(0, 2).map(k => `"${k}"`).join(' and ');
+      optimizedText += ` Furthermore, expanding your coverage to include ${kwList} would strengthen your topical authority in this space.`;
+      injected.push(...remaining.slice(0, 2));
+    }
+    
+    console.log(`[ContentGen] Final injected keywords: [${injected.join(', ')}]`);
 
     const payload = {
       optimizedText,
       injectedKeywords: injected,
-      metadata: { source: 'rag-algorithmic-weaver' }
+      metadata: { source: 'rag-smart-weaver', competitorsCrawled: validCompetitors.length }
     };
 
     try {
@@ -1045,16 +1194,16 @@ app.post('/api/keywords/research', auth, keywordLimiter, async (req, res) => {
 
         if (aiResponse.data.status === 'success') {
           const gap = aiResponse.data.comparison.content_gap;
-          aiStrategicKeywords = gap.suggestions.map(s => {
-            const intent = s.reason.includes('Strategic') ? 'commercial' : 'informational';
-            const difficulty = 'Hard';
-            const relevance = 98;
+          aiStrategicKeywords = gap.suggestions.map((s, idx) => {
+            const intent = s.reason.includes('Strategic') || s.reason.includes('commercial') ? 'commercial' : 'informational';
+            const difficulty = s.reason.includes('dominat') || s.reason.includes('high') ? 'Hard' : 'Medium';
+            const relevance = Math.min(98, 70 + (idx * 3));
             return {
               keyword: s.use,
               type: 'ai-strategic',
               intent: intent,
               relevanceScore: relevance,
-              trendScore: 85,
+              trendScore: Math.max(50, relevance - 10),
               estimatedDifficulty: difficulty,
               reason: s.reason,
               isFromCompetitors: true,
@@ -1166,14 +1315,14 @@ app.post('/api/competitor/compare', auth, async (req, res) => {
         ...ownResult.elements,
         content_length: ownResult.elements.wordCount,
         num_internal_links: ownResult.elements.linkCount,
-        domain_authority: 30,
+        domain_authority: ownResult.audit?.indexedPages ? Math.min(90, Math.round(Math.log10(ownResult.audit.indexedPages + 1) * 15)) : 25,
       },
       competitor: {
         url: competitorUrl,
         ...compResult.elements,
         content_length: compResult.elements.wordCount,
         num_internal_links: compResult.elements.linkCount,
-        domain_authority: 45,
+        domain_authority: compResult.audit?.indexedPages ? Math.min(90, Math.round(Math.log10(compResult.audit.indexedPages + 1) * 15)) : 35,
       }
     }, { timeout: 45000 });
 
@@ -1222,11 +1371,14 @@ app.post('/api/competitor/compare', auth, async (req, res) => {
 function cleanAnalysis(analysis) {
   if (!analysis || !analysis.content_gap) return analysis;
   
-  // Filter out suggestions that use placeholders
-  const placeholders = ['generic content', 'filler text', 'unoptimized sections', 'placeholder'];
+  // Deduplicate suggestions by 'use' keyword (the new engine handles most dedup,
+  // but this is a safety net for edge cases)
+  const seen = new Set();
   analysis.content_gap.suggestions = analysis.content_gap.suggestions.filter(s => {
-    const instead = s.instead_of.toLowerCase();
-    return !placeholders.some(p => instead.includes(p));
+    const key = (s.use || '').toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
   });
   
   return analysis;

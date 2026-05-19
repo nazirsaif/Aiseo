@@ -201,16 +201,30 @@ function extractPhrasesFromCompetitors(competitorData, baseKeyword) {
  */
 function getPatternSupplement(baseKeyword) {
   const kw = baseKeyword.toLowerCase();
-  return [
+  const kwWords = new Set(kw.split(/\s+/));
+  
+  // "how to" only works with action-oriented keywords; for noun-phrases use "understanding"
+  const hasVerb = /\b(improve|build|create|optimize|manage|use|start|grow|do|make|run|get|find)\b/i.test(kw);
+  const howToPrefix = hasVerb ? `how to ${kw}` : `understanding ${kw}`;
+
+  const rawPatterns = [
     `best ${kw}`, `${kw} guide`, `${kw} tips`, `${kw} tools`,
-    `how to ${kw}`, `${kw} for beginners`, `${kw} strategies`,
+    howToPrefix, `${kw} for beginners`, `${kw} strategies`,
     `${kw} examples`, `${kw} tutorial`, `what is ${kw}`,
     `${kw} review`, `${kw} comparison`, `${kw} software`,
     `${kw} checklist`, `${kw} best practices`,
     `${kw} trends 2024`, `advanced ${kw} techniques`,
     `professional ${kw} solutions`, `${kw} implementation`,
-    `top rated ${kw}`, `${kw} benefits`
+    `top rated ${kw}`, `${kw} benefits`,
+    `${kw} optimization`, `${kw} analysis`, `${kw} automation`
   ];
+  
+  // Filter out patterns where the suffix/prefix word is already in the keyword
+  return rawPatterns.filter(pattern => {
+    const patternWords = pattern.split(/\s+/);
+    const addedWords = patternWords.filter(w => !kwWords.has(w) && w.length > 2);
+    return addedWords.length > 0;
+  });
 }
 
 // ─── Local intent classifier ─────────────────────────────────────────────────

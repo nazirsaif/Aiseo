@@ -43,22 +43,65 @@ const ContentGeneration = ({ authToken, API_BASE_URL }) => {
     }
   };
 
+  const renderHighlightedText = (text, keywords) => {
+    if (!text) return null;
+    return text.split('\n').map((paragraph, idx) => {
+      if (!paragraph.trim()) return null;
+      if (!keywords || keywords.length === 0) {
+        return <p key={idx} style={{ marginBottom: '1rem' }}>{paragraph}</p>;
+      }
+      const escaped = keywords.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+      const regex = new RegExp(`(${escaped.join('|')})`, 'gi');
+      const parts = paragraph.split(regex);
+      return (
+        <p key={idx} style={{ marginBottom: '1rem' }}>
+          {parts.map((part, i) => {
+            const isHighlighted = keywords.some(k => k.toLowerCase() === part.toLowerCase());
+            return isHighlighted
+              ? <mark key={i} style={{ background: 'rgba(16, 185, 129, 0.2)', color: '#10b981', padding: '0.1em 0.3em', borderRadius: '4px', fontWeight: '600' }}>{part}</mark>
+              : <span key={i}>{part}</span>;
+          })}
+        </p>
+      );
+    });
+  };
+
   return (
     <div className="page-section active">
-      <div style={{ marginBottom: '2.5rem' }}>
-        <h2 style={{ fontSize: '2.5rem', fontWeight: '800', marginBottom: '0.5rem', background: 'linear-gradient(to right, #fff, #94a3b8)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+      {/* ── Centered Header ── */}
+      <div style={{ marginBottom: '2.5rem', textAlign: 'center' }}>
+        <h2 style={{
+          fontSize: '2.5rem',
+          fontWeight: '800',
+          marginBottom: '0.5rem',
+          color: 'white',
+        }}>
           AI Content Generator
         </h2>
-        <p style={{ color: 'var(--text-muted)', fontSize: '1.1rem' }}>Optimize your paragraphs with semantic keywords extracted via our RAG engine.</p>
-        
-        <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'rgba(16, 185, 129, 0.05)', borderRadius: '12px', border: '1px solid rgba(16, 185, 129, 0.1)' }}>
-          <h4 style={{ fontSize: '0.9rem', color: 'var(--secondary)', marginBottom: '0.5rem' }}><i className="fas fa-magic"></i> Algorithmic Keyword Weaving</h4>
-          <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: 0, lineHeight: '1.5' }}>
-            Our engine scans live competitor data for your target keyword to find strategic semantic gaps, and then weaves those high-value keywords seamlessly into your provided content.
+        <p style={{ color: 'var(--text-muted)', fontSize: '1.1rem', maxWidth: '600px', margin: '0 auto' }}>
+          Optimize your content with semantic keywords extracted via our RAG intelligence engine.
+        </p>
+
+        <div style={{
+          marginTop: '1.5rem',
+          padding: '1rem 1.5rem',
+          background: 'rgba(16, 185, 129, 0.05)',
+          borderRadius: '12px',
+          border: '1px solid rgba(16, 185, 129, 0.1)',
+          maxWidth: '1500px',
+          margin: '1.5rem auto 0',
+          textAlign: 'left',
+        }}>
+          <h4 style={{ fontSize: '0.9rem', color: 'var(--secondary)', marginBottom: '0.5rem' }}>
+            <i className="fas fa-magic"></i> How It Works
+          </h4>
+          <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: 0, lineHeight: '1.6' }}>
+            <strong>1.</strong> Enter your target keyword below &nbsp;→&nbsp; <strong>2.</strong> Paste your existing content &nbsp;→&nbsp; <strong>3.</strong> Our engine crawls live competitors, extracts high-value semantic gaps, and weaves them into your text at natural insertion points.
           </p>
         </div>
       </div>
 
+      {/* ── Input Card ── */}
       <div className="card" style={{ marginBottom: '2rem', border: '1px solid rgba(255,255,255,0.1)' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           <div>
@@ -86,38 +129,49 @@ const ContentGeneration = ({ authToken, API_BASE_URL }) => {
             />
           </div>
           
-          <button 
-            className="btn-primary" 
-            onClick={handleGenerate}
-            disabled={isGenerating}
-            style={{ padding: '1rem 2.5rem', alignSelf: 'flex-start' }}
-          >
-            {isGenerating ? <i className="fas fa-spinner fa-spin"></i> : <i className="fas fa-bolt"></i>}
-            {isGenerating ? ' Optimizing...' : ' Generate SEO Content'}
-          </button>
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            <button 
+              className="btn-primary" 
+              onClick={handleGenerate}
+              disabled={isGenerating}
+              style={{ padding: '1rem 2.5rem' }}
+            >
+              {isGenerating ? <i className="fas fa-spinner fa-spin"></i> : <i className="fas fa-bolt"></i>}
+              {isGenerating ? ' Analyzing Competitors...' : ' Generate SEO Content'}
+            </button>
+          </div>
         </div>
       </div>
 
+      {/* ── Results ── */}
       {result && (
-        <div className="results-grid" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '2rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '2rem' }}>
+          {/* Optimized Output */}
           <div className="card" style={{ background: 'rgba(15, 23, 42, 0.3)', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
-            <h3 style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem', fontSize: '1.25rem' }}>
+            <h3 style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', fontSize: '1.25rem' }}>
               <i className="fas fa-check-circle" style={{ color: 'var(--secondary)' }}></i>
               Optimized Output
             </h3>
-            <div style={{ padding: '1.5rem', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)', fontSize: '1.05rem', lineHeight: '1.8', color: '#e2e8f0' }}>
-              {/* Highlight the injected keywords if possible, else just render text */}
-              {result.optimizedText.split('\n').map((paragraph, idx) => (
-                <p key={idx} style={{ marginBottom: '1rem' }}>{paragraph}</p>
-              ))}
+            <div style={{
+              padding: '1.5rem',
+              background: 'rgba(255,255,255,0.02)',
+              borderRadius: '12px',
+              border: '1px solid rgba(255,255,255,0.05)',
+              fontSize: '1.05rem',
+              lineHeight: '1.8',
+              color: '#e2e8f0'
+            }}>
+              {renderHighlightedText(result.optimizedText, result.injectedKeywords)}
             </div>
 
+            {/* Injected Keywords Badges */}
             {result.injectedKeywords && result.injectedKeywords.length > 0 && (
-              <div style={{ marginTop: '2rem' }}>
+              <div style={{ marginTop: '2rem', textAlign: 'center' }}>
                 <h4 style={{ fontSize: '0.85rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '1rem', letterSpacing: '0.1em' }}>
-                  Keywords Injected
+                  <i className="fas fa-tags" style={{ marginRight: '0.5rem', color: 'var(--secondary)' }}></i>
+                  Keywords Injected ({result.injectedKeywords.length})
                 </h4>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.6rem' }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.6rem', justifyContent: 'center' }}>
                   {result.injectedKeywords.map((kw, i) => (
                     <span key={i} style={{ 
                       background: 'rgba(16, 185, 129, 0.1)', 
@@ -135,6 +189,34 @@ const ContentGeneration = ({ authToken, API_BASE_URL }) => {
                 </div>
               </div>
             )}
+          </div>
+
+          {/* Stats Summary */}
+          <div className="card" style={{ background: 'rgba(15, 23, 42, 0.3)', border: '1px solid rgba(255,255,255,0.08)' }}>
+            <h3 style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', fontSize: '1.1rem', color: 'var(--text-muted)' }}>
+              <i className="fas fa-chart-bar" style={{ color: 'var(--primary)' }}></i>
+              Optimization Summary
+            </h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '1rem' }}>
+              <div style={{ textAlign: 'center', padding: '1rem', background: 'rgba(255,255,255,0.02)', borderRadius: '10px' }}>
+                <div style={{ fontSize: '1.8rem', fontWeight: '700', color: 'var(--secondary)' }}>
+                  {result.injectedKeywords?.length || 0}
+                </div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.3rem' }}>Keywords Added</div>
+              </div>
+              <div style={{ textAlign: 'center', padding: '1rem', background: 'rgba(255,255,255,0.02)', borderRadius: '10px' }}>
+                <div style={{ fontSize: '1.8rem', fontWeight: '700', color: 'var(--primary)' }}>
+                  {content.split(/\s+/).filter(w => w.length > 0).length}
+                </div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.3rem' }}>Original Words</div>
+              </div>
+              <div style={{ textAlign: 'center', padding: '1rem', background: 'rgba(255,255,255,0.02)', borderRadius: '10px' }}>
+                <div style={{ fontSize: '1.8rem', fontWeight: '700', color: '#818cf8' }}>
+                  {result.optimizedText ? result.optimizedText.split(/\s+/).filter(w => w.length > 0).length : 0}
+                </div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.3rem' }}>Optimized Words</div>
+              </div>
+            </div>
           </div>
         </div>
       )}

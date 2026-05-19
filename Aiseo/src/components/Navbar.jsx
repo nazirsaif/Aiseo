@@ -2,7 +2,7 @@ import React from 'react';
 
 const Navbar = ({ currentUser, currentPage, onNavigate, onLogout }) => {
   return (
-    <nav className="navbar">
+    <nav className="navbar"  >
 
 
       <ul className="nav-links">
